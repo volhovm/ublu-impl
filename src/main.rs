@@ -1,17 +1,5 @@
-pub trait Field {
-    fn generator() -> Self;
-}
-
-pub trait Group {
-    type ScalarField: Field;
-}
-
-pub trait BiGroup {
-    type G1: Group;
-    type G2: Group;
-    type GT: Group;
-    fn pairing(x: Self::G1, y: Self::G2) -> Self::GT;
-}
+use ark_ec::{pairing::Pairing, Group};
+use ark_ff::Field;
 
 pub struct LinearPoly<G: Group> {
     poly_coeffs: Vec<G::ScalarField>,
@@ -31,21 +19,21 @@ pub struct AlgWit<G: Group> {
     pub wit: Vec<G::ScalarField>,
 }
 
-pub struct CH20CRS<BG: BiGroup> {
-    pub e: BG::G2,
+pub struct CH20CRS<P: Pairing> {
+    pub e: P::G2,
 }
 
-pub struct CH20Proof<BG: BiGroup> {
-    pub a: Vec<BG::G1>,
-    pub b: Vec<BG::G2>,
+pub struct CH20Proof<P: Pairing> {
+    pub a: Vec<P::G1>,
+    pub b: Vec<P::G2>,
 }
 
-pub fn ch20_prove<BG: BiGroup>(
-    crs: CH20CRS<BG>,
-    lang: AlgLang<BG::G1>,
-    inst: AlgInst<BG::G1>,
-    wit: AlgWit<BG::G1>,
-) -> CH20Proof<BG> {
+pub fn ch20_prove<P: Pairing>(
+    crs: CH20CRS<P>,
+    lang: AlgLang<P::G1>,
+    inst: AlgInst<P::G1>,
+    wit: AlgWit<P::G1>,
+) -> CH20Proof<P> {
     unimplemented!()
 }
 
@@ -53,10 +41,10 @@ pub enum CH20VerifierError {
     CH20GenericError(String),
 }
 
-pub fn ch20_verify<BG: BiGroup>(
-    crs: CH20CRS<BG>,
-    lang: AlgLang<BG::G1>,
-    inst: AlgInst<BG::G1>,
+pub fn ch20_verify<P: Pairing>(
+    crs: CH20CRS<P>,
+    lang: AlgLang<P::G1>,
+    inst: AlgInst<P::G1>,
 ) -> Result<(), CH20VerifierError> {
     unimplemented!()
 }

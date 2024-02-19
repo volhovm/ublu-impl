@@ -8,6 +8,17 @@ pub struct LinearPoly<G: Group> {
     poly_const: G,
 }
 
+impl<G: Group> LinearPoly<G> {
+    pub fn eval_lpoly(&self, vars: &[G]) -> G {
+        self.poly_const
+            + vars
+                .iter()
+                .zip(self.poly_coeffs.iter())
+                .map(|(var, coeff)| *var * coeff)
+                .sum::<G>()
+    }
+}
+
 pub struct AlgLang<G: Group> {
     matrix: Vec<Vec<LinearPoly<G>>>,
     inst_map: LinearPoly<G>,
@@ -15,7 +26,15 @@ pub struct AlgLang<G: Group> {
 
 impl<G: Group> AlgLang<G> {
     pub fn instantiate_matrix(&self, inst: &Vec<G>) -> Vec<Vec<G>> {
-        unimplemented!()
+        let mut res_mat: Vec<Vec<G>> = vec![];
+        for i in 0..self.inst_size() {
+            let mut row: Vec<G> = vec![];
+            for j in 0..self.wit_size() {
+                row.push((&self.matrix[i][j]).eval_lpoly(inst));
+            }
+            res_mat.push(row);
+        }
+        res_mat
     }
     pub fn wit_size(&self) -> usize {
         self.matrix[0].len()

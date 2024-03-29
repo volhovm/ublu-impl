@@ -4,6 +4,7 @@ use ark_ff::{Field, One, Zero};
 use ark_std::UniformRand;
 use rand::thread_rng;
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LinearPoly<G: Group> {
     poly_coeffs: Vec<G::ScalarField>,
     poly_const: G,
@@ -17,6 +18,23 @@ impl<G: Group> LinearPoly<G> {
                 .zip(self.poly_coeffs.iter())
                 .map(|(var, coeff)| *var * coeff)
                 .sum::<G>()
+    }
+
+    pub fn zero(size: usize) -> Self {
+        LinearPoly {
+            poly_coeffs: vec![G::ScalarField::zero(); size],
+            poly_const: Zero::zero(),
+        }
+    }
+
+    pub fn single(size: usize, ix: usize) -> Self {
+        let mut poly_coeffs: Vec<_> = vec![G::ScalarField::zero(); size];
+        let poly_const = G::zero();
+        poly_coeffs[ix] = G::ScalarField::from(1u64);
+        LinearPoly {
+            poly_coeffs,
+            poly_const,
+        }
     }
 }
 
@@ -115,9 +133,10 @@ pub fn ch20_verify<P: Pairing>(
     inst: &AlgInst<P::G1>,
     proof: &CH20Proof<P>,
 ) -> Result<(), CH20VerifierError> {
-    let mut lhs: Vec<Vec<P::G1>> = vec![];
-    let mut rhs: Vec<Vec<P::G2>> = vec![];
+    let mut lhs: Vec<Vec<P::G1>> = vec![vec![]; lang.inst_size()];
+    let mut rhs: Vec<Vec<P::G2>> = vec![vec![]; lang.inst_size()];
     let mat = lang.instantiate_matrix(&inst.0);
+    println!("{mat:?}");
     for i in 0..lang.inst_size() {
         for j in 0..lang.wit_size() {
             lhs[i].push(mat[i][j]);
@@ -143,19 +162,35 @@ pub fn ch20_verify<P: Pairing>(
 
 // Concrete curve
 type CC = Bls12_381;
+type CF = <Bls12_381 as Pairing>::ScalarField;
 
-type G1 = <Bls12_381 as Pairing>::G1;
+type CG1 = <Bls12_381 as Pairing>::G1;
 
 fn test_ch20_correctness() {
-    //    let lang: AlgLang<G1> = todo!();
-    //    let inst: AlgInst<G1> = todo!();
-    //    let wit: AlgWit<G1> = todo!();
-    //    let crs: CH20CRS<CC> = ch20_setup();
-    //    let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
-    //    let res = ch20_verify(&crs, &lang, &inst, &proof);
-    //    println!("Result: {:?}", res);
+    let mut rng = thread_rng();
+    let g: CG1 = UniformRand::rand(&mut rng);
+    let x: CF = UniformRand::rand(&mut rng);
+    let y: CF = UniformRand::rand(&mut rng);
+    let gx: CG1 = g * x;
+    let gy: CG1 = g * y;
+    let gz: CG1 = g * (x * y);
+
+    let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
+        vec![LinearPoly::single(4, 0), LinearPoly::zero(4)],
+        vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
+        vec![LinearPoly::zero(4), LinearPoly::single(4, 1)],
+    ];
+    let inst_map = LinearPoly::zero(4);
+
+    let lang: AlgLang<CG1> = AlgLang { matrix, inst_map };
+    let inst: AlgInst<CG1> = AlgInst(vec![g, gx, gy, gz]);
+    let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
+    let crs: CH20CRS<CC> = ch20_setup();
+    let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
+    let res = ch20_verify(&crs, &lang, &inst, &proof);
+    println!("Result: {:?}", res);
 }
 
 fn main() {
-    println!("Hello, world!");
+    test_ch20_correctness();
 }

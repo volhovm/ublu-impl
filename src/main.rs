@@ -20,11 +20,15 @@ impl<G: Group> LinearPoly<G> {
                 .sum::<G>()
     }
 
-    pub fn zero(size: usize) -> Self {
+    pub fn constant(size: usize, elem: G) -> Self {
         LinearPoly {
             poly_coeffs: vec![G::ScalarField::zero(); size],
-            poly_const: Zero::zero(),
+            poly_const: elem,
         }
+    }
+
+    pub fn zero(size: usize) -> Self {
+        Self::constant(size, Zero::zero())
     }
 
     pub fn single(size: usize, ix: usize) -> Self {
@@ -60,6 +64,11 @@ impl<G: Group> AlgLang<G> {
     }
     pub fn inst_size(&self) -> usize {
         self.matrix.len()
+    }
+    pub fn check_validity(&self, inst: &AlgInst<G>, wit: &AlgWit<G>) -> bool {
+        let matrix = self.instantiate_matrix(&inst.0);
+        let inst2 = mul_mat_by_vec(&matrix, &wit.0);
+        inst2 == inst.0
     }
 }
 
@@ -176,15 +185,19 @@ fn test_ch20_correctness() {
     let gz: CG1 = g * (x * y);
 
     let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
-        vec![LinearPoly::single(4, 0), LinearPoly::zero(4)],
+        vec![LinearPoly::constant(4, g), LinearPoly::zero(4)],
+        vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
         vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
-        vec![LinearPoly::zero(4), LinearPoly::single(4, 1)],
     ];
     let inst_map = LinearPoly::zero(4);
 
     let lang: AlgLang<CG1> = AlgLang { matrix, inst_map };
-    let inst: AlgInst<CG1> = AlgInst(vec![g, gx, gy, gz]);
+    let inst: AlgInst<CG1> = AlgInst(vec![gx, gy, gz]);
     let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
+
+    let lang_valid = lang.check_validity(&inst, &wit);
+    println!("Language valid? {lang_valid:?}");
+
     let crs: CH20CRS<CC> = ch20_setup();
     let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
     let res = ch20_verify(&crs, &lang, &inst, &proof);

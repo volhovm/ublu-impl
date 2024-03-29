@@ -1,4 +1,5 @@
-use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, Group};
+use ark_bls12_381::{Bls12_381, G1Affine, G1Projective, G2Affine};
+use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{Field, One, Zero};
 use ark_std::UniformRand;
 use rand::thread_rng;
@@ -80,10 +81,10 @@ where
 }
 
 pub fn ch20_prove<P: Pairing>(
-    crs: CH20CRS<P>,
-    lang: AlgLang<P::G1>,
-    inst: AlgInst<P::G1>,
-    wit: AlgWit<P::G1>,
+    crs: &CH20CRS<P>,
+    lang: &AlgLang<P::G1>,
+    inst: &AlgInst<P::G1>,
+    wit: &AlgWit<P::G1>,
 ) -> CH20Proof<P>
 where
     P::ScalarField: UniformRand,
@@ -103,15 +104,16 @@ where
     CH20Proof { a, d }
 }
 
+#[derive(Debug)]
 pub enum CH20VerifierError {
     CH20GenericError(String),
 }
 
 pub fn ch20_verify<P: Pairing>(
-    crs: CH20CRS<P>,
-    lang: AlgLang<P::G1>,
-    inst: AlgInst<P::G1>,
-    proof: CH20Proof<P>,
+    crs: &CH20CRS<P>,
+    lang: &AlgLang<P::G1>,
+    inst: &AlgInst<P::G1>,
+    proof: &CH20Proof<P>,
 ) -> Result<(), CH20VerifierError> {
     let mut lhs: Vec<Vec<P::G1>> = vec![];
     let mut rhs: Vec<Vec<P::G2>> = vec![];
@@ -137,6 +139,21 @@ pub fn ch20_verify<P: Pairing>(
         }
     }
     Ok(())
+}
+
+// Concrete curve
+type CC = Bls12_381;
+
+type G1 = <Bls12_381 as Pairing>::G1;
+
+fn test_ch20_correctness() {
+    //    let lang: AlgLang<G1> = todo!();
+    //    let inst: AlgInst<G1> = todo!();
+    //    let wit: AlgWit<G1> = todo!();
+    //    let crs: CH20CRS<CC> = ch20_setup();
+    //    let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
+    //    let res = ch20_verify(&crs, &lang, &inst, &proof);
+    //    println!("Result: {:?}", res);
 }
 
 fn main() {

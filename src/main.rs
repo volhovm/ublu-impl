@@ -83,6 +83,18 @@ fn mul_mat_by_vec<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> Vec<G> {
     res
 }
 
+fn mul_mat_by_vec_2<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> Vec<G> {
+    let n = mat.len();
+    let m = mat[0].len();
+    let mut res: Vec<G> = vec![Zero::zero(); n];
+    for i in 0..n {
+        for j in 0..m {
+            res[i] += vec[j] * mat[i][j];
+        }
+    }
+    res
+}
+
 pub struct AlgInst<G: Group>(Vec<G>);
 
 pub struct AlgWit<G: Group>(Vec<G::ScalarField>);
@@ -168,6 +180,100 @@ pub fn ch20_verify<P: Pairing>(
     Ok(())
 }
 
+pub struct CH20Trans<P: Pairing> {
+    pub t_am: Vec<Vec<P::ScalarField>>,
+    pub t_aa: Vec<P::ScalarField>,
+    pub t_xm: Vec<Vec<P::ScalarField>>,
+    pub t_xa: Vec<P::ScalarField>,
+    pub t_wm: Vec<Vec<P::ScalarField>>,
+    pub t_wa: Vec<P::ScalarField>,
+}
+
+impl<P: Pairing> CH20Trans<P> {
+    fn update_instance(&self, inst: &AlgInst<P::G1>) -> AlgInst<P::G1> {
+        let inst_prime_e1: Vec<P::G1> = mul_mat_by_vec_2(&self.t_xm, &inst.0);
+        let inst_prime_e2: Vec<P::G1> = self
+            .t_xa
+            .clone()
+            .into_iter()
+            .map(|x| P::G1::generator() * x)
+            .collect();
+
+        let inst_prime: Vec<P::G1> = inst_prime_e1
+            .into_iter()
+            .zip(inst_prime_e2)
+            .map(|(x, y)| x + y)
+            .collect();
+
+        AlgInst(inst_prime)
+    }
+}
+
+pub fn ch20_update<P: Pairing>(
+    crs: &CH20CRS<P>,
+    lang: &AlgLang<P::G1>,
+    inst: &AlgInst<P::G1>,
+    proof: &CH20Proof<P>,
+    trans: &CH20Trans<P>,
+) -> CH20Proof<P> {
+    let mut rng = thread_rng();
+    // FIXME Not working with random s_hat, but works with zero one
+    //let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
+    //    .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+    //    .collect();
+    let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
+        .map(|_i| P::ScalarField::zero())
+        .collect();
+
+    let a_prime_e1: Vec<P::G1> = mul_mat_by_vec_2(
+        &trans.t_am,
+        &proof
+            .a
+            .clone()
+            .into_iter()
+            .chain(inst.0.clone())
+            .collect::<Vec<P::G1>>(),
+    );
+    let a_prime_e2: Vec<P::G1> = trans
+        .t_aa
+        .clone()
+        .into_iter()
+        .map(|x| P::G1::generator() * x)
+        .collect();
+
+    let mat = lang.instantiate_matrix(&inst.0);
+    let a_prime_e3: Vec<P::G1> = mul_mat_by_vec(&mat, &s_hat);
+
+    let a_prime: Vec<P::G1> = a_prime_e1
+        .into_iter()
+        .zip(a_prime_e2)
+        .zip(a_prime_e3)
+        .map(|((x, y), z)| x + y + z)
+        .collect();
+
+    let d_prime_e1: Vec<P::G2> = mul_mat_by_vec_2(&trans.t_wm, &proof.d);
+    let d_prime_e2: Vec<P::G2> = trans.t_wa.clone().into_iter().map(|x| crs.e * x).collect();
+    let d_prime_e3: Vec<P::G2> = trans
+        .t_wa
+        .clone()
+        .into_iter()
+        .zip(s_hat)
+        .map(|(x, y)| P::G2::generator() * (x + y))
+        .collect();
+
+    let d_prime: Vec<P::G2> = d_prime_e1
+        .into_iter()
+        .zip(d_prime_e2)
+        .zip(d_prime_e3)
+        .map(|((x, y), z)| x + y + z)
+        .collect();
+
+    CH20Proof {
+        a: a_prime,
+        d: d_prime,
+    }
+}
+
 // Concrete curve
 type CC = Bls12_381;
 type CF = <Bls12_381 as Pairing>::ScalarField;
@@ -183,6 +289,9 @@ fn test_ch20_correctness() {
     let gy: CG1 = g * y;
     let gz: CG1 = g * (x * y);
 
+    // g 0
+    // 0 g
+    // 0 x1
     let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
         vec![LinearPoly::constant(4, g), LinearPoly::zero(4)],
         vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
@@ -199,7 +308,37 @@ fn test_ch20_correctness() {
     let crs: CH20CRS<CC> = ch20_setup();
     let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
     let res = ch20_verify(&crs, &lang, &inst, &proof);
-    println!("Result: {:?}", res);
+    println!("Verification result: {:?}", res);
+
+    let delta: CF = UniformRand::rand(&mut rng);
+    let gamma: CF = UniformRand::rand(&mut rng);
+    let t_xm: Vec<Vec<CF>> = vec![
+        vec![gamma, CF::zero(), CF::zero()],
+        vec![CF::zero(), delta, CF::zero()],
+        vec![CF::zero(), CF::zero(), gamma * delta],
+    ];
+    let t_xa: Vec<CF> = vec![CF::zero(); 3];
+    let t_wm: Vec<Vec<CF>> = vec![vec![gamma, CF::zero()], vec![CF::zero(), delta]];
+    let t_wa: Vec<CF> = vec![CF::zero(); 2];
+    let emptyrow: Vec<CF> = vec![CF::zero(); 3];
+    let t_am: Vec<Vec<CF>> = t_xm
+        .clone()
+        .into_iter()
+        .map(|row| row.into_iter().chain(emptyrow.clone()).collect())
+        .collect();
+    let t_aa = t_xa.clone();
+    let trans: CH20Trans<CC> = CH20Trans {
+        t_am,
+        t_aa,
+        t_xm,
+        t_xa,
+        t_wm,
+        t_wa,
+    };
+    let inst2 = trans.update_instance(&inst);
+    let proof2 = ch20_update(&crs, &lang, &inst, &proof, &trans);
+    let res2 = ch20_verify(&crs, &lang, &inst2, &proof2);
+    println!("Transformed proof valid?: {:?}", res2);
 }
 
 fn main() {

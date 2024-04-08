@@ -1,6 +1,6 @@
-use ark_bls12_381::{Bls12_381, G1Affine, G1Projective, G2Affine};
+use ark_bls12_381::Bls12_381;
 use ark_ec::{pairing::Pairing, Group};
-use ark_ff::{Field, One, Zero};
+use ark_ff::Zero;
 use ark_std::UniformRand;
 use rand::thread_rng;
 
@@ -44,16 +44,15 @@ impl<G: Group> LinearPoly<G> {
 
 pub struct AlgLang<G: Group> {
     matrix: Vec<Vec<LinearPoly<G>>>,
-    inst_map: LinearPoly<G>,
 }
 
 impl<G: Group> AlgLang<G> {
-    pub fn instantiate_matrix(&self, inst: &Vec<G>) -> Vec<Vec<G>> {
+    pub fn instantiate_matrix(&self, inst: &[G]) -> Vec<Vec<G>> {
         let mut res_mat: Vec<Vec<G>> = vec![];
         for i in 0..self.inst_size() {
             let mut row: Vec<G> = vec![];
             for j in 0..self.wit_size() {
-                row.push((&self.matrix[i][j]).eval_lpoly(inst));
+                row.push((self.matrix[i][j]).eval_lpoly(inst));
             }
             res_mat.push(row);
         }
@@ -189,9 +188,8 @@ fn test_ch20_correctness() {
         vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
         vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
     ];
-    let inst_map = LinearPoly::zero(4);
 
-    let lang: AlgLang<CG1> = AlgLang { matrix, inst_map };
+    let lang: AlgLang<CG1> = AlgLang { matrix };
     let inst: AlgInst<CG1> = AlgInst(vec![gx, gy, gz]);
     let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
 

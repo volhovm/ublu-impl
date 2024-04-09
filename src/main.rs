@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 use ark_bls12_381::Bls12_381;
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{One, Zero};
@@ -205,7 +207,38 @@ pub struct CH20Trans<P: Pairing> {
 }
 
 impl<P: Pairing> CH20Trans<P> {
-    fn update_instance(&self, inst: &AlgInst<P::G1>) -> AlgInst<P::G1> {
+    /// Creates a zero (ID) transformation for a given language.
+    pub fn zero_trans(lang: &AlgLang<P::G1>) -> CH20Trans<CC> {
+        let mut t_xm: Vec<Vec<CF>> = vec![vec![CF::zero(); lang.inst_size()]; lang.inst_size()];
+        for i in 0..lang.inst_size() {
+            t_xm[i][i] = CF::one();
+        }
+        let mut t_wm: Vec<Vec<CF>> = vec![vec![CF::zero(); lang.wit_size()]; lang.wit_size()];
+        for i in 0..lang.wit_size() {
+            t_wm[i][i] = CF::one();
+        }
+
+        let t_xa: Vec<CF> = vec![CF::zero(); lang.inst_size()];
+        let t_wa: Vec<CF> = vec![CF::zero(); lang.wit_size()];
+
+        let t_am: Vec<Vec<CF>> = t_xm
+            .clone()
+            .into_iter()
+            .map(|row| row.into_iter().chain(t_xa.clone()).collect())
+            .collect();
+        let t_aa = t_xa.clone();
+
+        CH20Trans {
+            t_am,
+            t_aa,
+            t_xm,
+            t_xa,
+            t_wm,
+            t_wa,
+        }
+    }
+
+    pub fn update_instance(&self, inst: &AlgInst<P::G1>) -> AlgInst<P::G1> {
         let inst_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(&self.t_xm, &inst.0);
         let inst_prime_e2: Vec<P::G1> = self
             .t_xa
@@ -223,7 +256,7 @@ impl<P: Pairing> CH20Trans<P> {
         AlgInst(inst_prime)
     }
 
-    fn update_witness(&self, wit: &AlgWit<P::G1>) -> AlgWit<P::G1> {
+    pub fn update_witness(&self, wit: &AlgWit<P::G1>) -> AlgWit<P::G1> {
         let wit_prime_e1: Vec<P::ScalarField> = mul_mat_by_vec_f_f::<P::G1>(&self.t_wm, &wit.0);
         let wit_prime_e2: Vec<P::ScalarField> = self.t_wa.clone();
 
@@ -239,7 +272,7 @@ impl<P: Pairing> CH20Trans<P> {
     /// Does a probabilistic check that the transformation is blinding
     /// compatible. If returns false, it's not. If returns true, the
     /// language is blinding compatible with some probability.
-    fn is_blinding_compatible(&self, lang: &AlgLang<P::G1>, inst: &AlgInst<P::G1>) -> bool {
+    pub fn is_blinding_compatible(&self, lang: &AlgLang<P::G1>, inst: &AlgInst<P::G1>) -> bool {
         let mut rng = thread_rng();
         let s: Vec<P::ScalarField> = (0..(lang.wit_size()))
             .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))

@@ -1,6 +1,6 @@
 use ark_bls12_381::Bls12_381;
 use ark_ec::{pairing::Pairing, Group};
-use ark_ff::Zero;
+use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::thread_rng;
 
@@ -274,12 +274,12 @@ pub fn ch20_update<P: Pairing>(
 ) -> CH20Proof<P> {
     let mut rng = thread_rng();
     // FIXME Not working with random s_hat, but works with zero one
-    //let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
-    //    .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
-    //    .collect();
     let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
-        .map(|_i| P::ScalarField::zero())
+        .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
         .collect();
+    //let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
+    //    .map(|_i| P::ScalarField::zero())
+    //    .collect();
 
     let a_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(
         &trans.t_am,
@@ -366,30 +366,59 @@ fn test_ch20_correctness() {
     let res = ch20_verify(&crs, &lang, &inst, &proof);
     println!("Verification result: {:?}", res);
 
-    let delta: CF = UniformRand::rand(&mut rng);
-    let gamma: CF = UniformRand::rand(&mut rng);
-    let t_xm: Vec<Vec<CF>> = vec![
-        vec![gamma, CF::zero(), CF::zero()],
-        vec![CF::zero(), delta, CF::zero()],
-        vec![CF::zero(), CF::zero(), gamma * delta],
-    ];
-    let t_xa: Vec<CF> = vec![CF::zero(); 3];
-    let t_wm: Vec<Vec<CF>> = vec![vec![gamma, CF::zero()], vec![CF::zero(), delta]];
-    let t_wa: Vec<CF> = vec![CF::zero(); 2];
-    let emptyrow: Vec<CF> = vec![CF::zero(); 3];
-    let t_am: Vec<Vec<CF>> = t_xm
-        .clone()
-        .into_iter()
-        .map(|row| row.into_iter().chain(emptyrow.clone()).collect())
-        .collect();
-    let t_aa = t_xa.clone();
-    let trans: CH20Trans<CC> = CH20Trans {
-        t_am,
-        t_aa,
-        t_xm,
-        t_xa,
-        t_wm,
-        t_wa,
+    let trans: CH20Trans<CC> = {
+        let t_xm: Vec<Vec<CF>> = vec![
+            vec![CF::one(), CF::zero(), CF::zero()],
+            vec![CF::zero(), CF::one(), CF::zero()],
+            vec![CF::zero(), CF::zero(), CF::one()],
+        ];
+        let t_xa: Vec<CF> = vec![CF::zero(); 3];
+        let t_wm: Vec<Vec<CF>> = vec![vec![CF::one(), CF::zero()], vec![CF::zero(), CF::one()]];
+        let t_wa: Vec<CF> = vec![CF::zero(); 2];
+        let emptyrow: Vec<CF> = vec![CF::zero(); 3];
+        let t_am: Vec<Vec<CF>> = t_xm
+            .clone()
+            .into_iter()
+            .map(|row| row.into_iter().chain(emptyrow.clone()).collect())
+            .collect();
+        let t_aa = t_xa.clone();
+
+        CH20Trans {
+            t_am,
+            t_aa,
+            t_xm,
+            t_xa,
+            t_wm,
+            t_wa,
+        }
+    };
+    let trans1: CH20Trans<CC> = {
+        let delta: CF = UniformRand::rand(&mut rng);
+        let gamma: CF = UniformRand::rand(&mut rng);
+        let t_xm: Vec<Vec<CF>> = vec![
+            vec![gamma, CF::zero(), CF::zero()],
+            vec![CF::zero(), delta, CF::zero()],
+            vec![CF::zero(), CF::zero(), gamma * delta],
+        ];
+        let t_xa: Vec<CF> = vec![CF::zero(); 3];
+        let t_wm: Vec<Vec<CF>> = vec![vec![gamma, CF::zero()], vec![CF::zero(), delta]];
+        let t_wa: Vec<CF> = vec![CF::zero(); 2];
+        let emptyrow: Vec<CF> = vec![CF::zero(); 3];
+        let t_am: Vec<Vec<CF>> = t_xm
+            .clone()
+            .into_iter()
+            .map(|row| row.into_iter().chain(emptyrow.clone()).collect())
+            .collect();
+        let t_aa = t_xa.clone();
+
+        CH20Trans {
+            t_am,
+            t_aa,
+            t_xm,
+            t_xa,
+            t_wm,
+            t_wa,
+        }
     };
     let blinding_compatible = trans.is_blinding_compatible(&lang, &inst);
     println!("Transformaion blinding compatible? {blinding_compatible:?}");

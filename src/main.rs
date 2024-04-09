@@ -44,6 +44,13 @@ impl<G: Group> LinearPoly<G> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AlgInst<G: Group>(Vec<G>);
+
+#[derive(Debug, Clone)]
+pub struct AlgWit<G: Group>(Vec<G::ScalarField>);
+
+#[derive(Debug, Clone)]
 pub struct AlgLang<G: Group> {
     matrix: Vec<Vec<LinearPoly<G>>>,
 }
@@ -111,10 +118,6 @@ fn mul_mat_by_vec_f_f<G: Group>(
     }
     res
 }
-
-pub struct AlgInst<G: Group>(Vec<G>);
-
-pub struct AlgWit<G: Group>(Vec<G::ScalarField>);
 
 pub struct CH20CRS<P: Pairing> {
     pub e: P::G2,
@@ -433,6 +436,7 @@ fn test_ch20_correctness() {
     let inst2 = trans.update_instance(&inst);
     let wit2 = trans.update_witness(&wit);
     let blinding_compatible2 = trans.is_blinding_compatible(&lang, &inst2);
+    println!(":#? {:#?}", inst2);
     println!("Transformaion blinding compatible wrt new inst? {blinding_compatible2:?}");
     let lang_valid_2 = lang.contains(&inst2, &wit2);
     println!("Transformed language valid? {lang_valid_2:?}");

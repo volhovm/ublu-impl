@@ -297,8 +297,9 @@ pub fn ch20_update<P: Pairing>(
         .map(|x| P::G1::generator() * x)
         .collect();
 
-    let mat = lang.instantiate_matrix(&inst.0);
-    let a_prime_e3: Vec<P::G1> = mul_mat_by_vec_g_f(&mat, &s_hat);
+    let inst_prime = trans.update_instance(inst);
+    let mat_prime = lang.instantiate_matrix(&inst_prime.0);
+    let a_prime_e3: Vec<P::G1> = mul_mat_by_vec_g_f(&mat_prime, &s_hat);
 
     let a_prime: Vec<P::G1> = a_prime_e1
         .into_iter()
@@ -367,32 +368,6 @@ fn test_ch20_correctness() {
     println!("Verification result: {:?}", res);
 
     let trans: CH20Trans<CC> = {
-        let t_xm: Vec<Vec<CF>> = vec![
-            vec![CF::one(), CF::zero(), CF::zero()],
-            vec![CF::zero(), CF::one(), CF::zero()],
-            vec![CF::zero(), CF::zero(), CF::one()],
-        ];
-        let t_xa: Vec<CF> = vec![CF::zero(); 3];
-        let t_wm: Vec<Vec<CF>> = vec![vec![CF::one(), CF::zero()], vec![CF::zero(), CF::one()]];
-        let t_wa: Vec<CF> = vec![CF::zero(); 2];
-        let emptyrow: Vec<CF> = vec![CF::zero(); 3];
-        let t_am: Vec<Vec<CF>> = t_xm
-            .clone()
-            .into_iter()
-            .map(|row| row.into_iter().chain(emptyrow.clone()).collect())
-            .collect();
-        let t_aa = t_xa.clone();
-
-        CH20Trans {
-            t_am,
-            t_aa,
-            t_xm,
-            t_xa,
-            t_wm,
-            t_wa,
-        }
-    };
-    let trans1: CH20Trans<CC> = {
         let delta: CF = UniformRand::rand(&mut rng);
         let gamma: CF = UniformRand::rand(&mut rng);
         let t_xm: Vec<Vec<CF>> = vec![

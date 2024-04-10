@@ -309,13 +309,9 @@ pub fn ch20_update<P: Pairing>(
     trans: &CH20Trans<P>,
 ) -> CH20Proof<P> {
     let mut rng = thread_rng();
-    // FIXME Not working with random s_hat, but works with zero one
     let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
         .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
         .collect();
-    //let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
-    //    .map(|_i| P::ScalarField::zero())
-    //    .collect();
 
     let a_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(
         &trans.t_am,
@@ -443,6 +439,49 @@ fn test_ch20_correctness() {
     let proof2 = ch20_update(&crs, &lang, &inst, &proof, &trans);
     let res2 = ch20_verify(&crs, &lang, &inst2, &proof2);
     println!("Transformed proof valid?: {:?}", res2);
+}
+
+pub fn ublu_consistency_lang<P: Pairing>(g: P::G1) -> AlgLang<P::G1> {
+    let d = 4;
+    let n = 3 * d + 4;
+    let m = 2 * d + 8;
+    // g 0
+    // 0 g
+    // 0 x1
+    let mat: Vec<Vec<LinearPoly<P::G1>>> = vec![vec![LinearPoly::zero(4); m]; n];
+
+    mat[0][0] = LinearPoly::constant(n, P::ScalarField::one());
+    mat[0][1] = hs[0];
+    mat[1][2] = LinearPoly::constant(n, P::ScalarField::one());
+    mat[1][3] = hs[0];
+    mat[2][4] = LinearPoly::constant(n, P::ScalarField::one());
+    mat[2][5] = hs[0];
+    mat[3][9] = LinearPoly::constant(n, P::ScalarField::one()); // A_1 = G^{r_1};
+    mat[4][6] = LinearPoly::constant(n, P::ScalarField::one());
+    mat[4][9] = hs[1];
+    mat[4][4] = hs[2];
+    for i in 0..d - 1 {
+        mat[5 + 2 * i][10 + i] = LinearPoly::constant(n, P::ScalarField::one());
+        mat[5 + 2 * i + 1][6] = inst[5 + 2 * i - 1];
+        mat[5 + 2 * i + 1][9 + d + i] = -hs[1];
+        mat[5 + 2 * i + 1][10 + i] = hs[1];
+        mat[5 + 2 * i + 1][7] = -hs[2 + i];
+        mat[5 + 2 * i + 1][4] = hs[3 + i];
+    }
+
+    mat[3 + 2 * d][2] = LinearPoly::constant(n, P::ScalarField::one());
+    mat[3 + 2 * d][0] = -LinearPoly::constant(n, P::ScalarField::one());
+    mat[3 + 2 * d][6] = -LinearPoly::constant(n, P::ScalarField::one());
+    mat[3 + 2 * d + 1][6] = inst[2];
+    mat[3 + 2 * d + 1][7] = -LinearPoly::constant(n, P::ScalarField::one());
+    mat[3 + 2 * d + 1][8] = -hs[0];
+
+    for i in 0..d - 1 {
+        mat[3 + 2 * d + 2 + i][6] = inst[3 + 2 * i];
+        mat[3 + 2 * d + 2 + i][9 + d + i] = -LinearPoly::constant(n, P::ScalarField::one());
+    }
+
+    AlgLang { matrix }
 }
 
 fn main() {

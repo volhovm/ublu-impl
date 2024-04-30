@@ -1,10 +1,38 @@
 #![allow(clippy::needless_range_loop)]
+#![allow(dead_code)]
 
 use ark_bls12_381::Bls12_381;
 use ark_ec::{pairing::Pairing, Group};
-use ark_ff::{One, Zero};
+use ark_ff::{One, PrimeField, Zero};
 use ark_std::UniformRand;
 use rand::thread_rng;
+
+fn field_pow<F: PrimeField>(base: F, exp: usize) -> F {
+    let mut res: F = F::one();
+    let mut exp2 = exp;
+    let mut bits: Vec<bool> = vec![];
+    while !exp2.is_zero() {
+        bits.push((exp2 & 0x1) == 0x1);
+        exp2 >>= 1;
+    }
+    for b in bits.iter().rev() {
+        res = res * res;
+        if *b {
+            res *= base;
+        }
+    }
+    res
+}
+
+fn test_field_pow() {
+    let mut rng = thread_rng();
+    let x: CF = UniformRand::rand(&mut rng);
+    assert!(field_pow(x, 1) == x);
+    assert!(field_pow(x, 2) == x * x);
+    assert!(field_pow(x, 3) == x * x * x);
+    assert!(field_pow(x, 4) == x * x * x * x);
+    assert!(field_pow(x, 5) == x * x * x * x * x);
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LinearPoly<G: Group> {
@@ -441,49 +469,124 @@ fn test_ch20_correctness() {
     println!("Transformed proof valid?: {:?}", res2);
 }
 
-pub fn ublu_consistency_lang<P: Pairing>(g: P::G1) -> AlgLang<P::G1> {
+pub fn test_ublu_consistency<P: Pairing>() {
+    let mut rng = thread_rng();
+    let g: P::G1 = UniformRand::rand(&mut rng);
+
     let d = 4;
     let n = 3 * d + 4;
     let m = 2 * d + 8;
-    // g 0
-    // 0 g
-    // 0 x1
-    let mat: Vec<Vec<LinearPoly<P::G1>>> = vec![vec![LinearPoly::zero(4); m]; n];
 
-    mat[0][0] = LinearPoly::constant(n, P::ScalarField::one());
-    mat[0][1] = hs[0];
-    mat[1][2] = LinearPoly::constant(n, P::ScalarField::one());
-    mat[1][3] = hs[0];
-    mat[2][4] = LinearPoly::constant(n, P::ScalarField::one());
-    mat[2][5] = hs[0];
-    mat[3][9] = LinearPoly::constant(n, P::ScalarField::one()); // A_1 = G^{r_1};
-    mat[4][6] = LinearPoly::constant(n, P::ScalarField::one());
-    mat[4][9] = hs[1];
-    mat[4][4] = hs[2];
-    for i in 0..d - 1 {
-        mat[5 + 2 * i][10 + i] = LinearPoly::constant(n, P::ScalarField::one());
-        mat[5 + 2 * i + 1][6] = inst[5 + 2 * i - 1];
-        mat[5 + 2 * i + 1][9 + d + i] = -hs[1];
-        mat[5 + 2 * i + 1][10 + i] = hs[1];
-        mat[5 + 2 * i + 1][7] = -hs[2 + i];
-        mat[5 + 2 * i + 1][4] = hs[3 + i];
-    }
+    let hs: Vec<_> = (0..d + 2)
+        .map(|_i| <P::G1 as UniformRand>::rand(&mut rng))
+        .collect();
 
-    mat[3 + 2 * d][2] = LinearPoly::constant(n, P::ScalarField::one());
-    mat[3 + 2 * d][0] = -LinearPoly::constant(n, P::ScalarField::one());
-    mat[3 + 2 * d][6] = -LinearPoly::constant(n, P::ScalarField::one());
-    mat[3 + 2 * d + 1][6] = inst[2];
-    mat[3 + 2 * d + 1][7] = -LinearPoly::constant(n, P::ScalarField::one());
-    mat[3 + 2 * d + 1][8] = -hs[0];
+    let matrix = {
+        // g 0
+        // 0 g
+        // 0 x1
+        let mut matrix: Vec<Vec<LinearPoly<P::G1>>> = vec![vec![LinearPoly::zero(4); m]; n];
 
-    for i in 0..d - 1 {
-        mat[3 + 2 * d + 2 + i][6] = inst[3 + 2 * i];
-        mat[3 + 2 * d + 2 + i][9 + d + i] = -LinearPoly::constant(n, P::ScalarField::one());
-    }
+        matrix[0][0] = LinearPoly::constant(n, g);
+        matrix[0][1] = LinearPoly::constant(n, hs[0]);
+        matrix[1][2] = LinearPoly::constant(n, g);
+        matrix[1][3] = LinearPoly::constant(n, hs[0]);
+        matrix[2][4] = LinearPoly::constant(n, g);
+        matrix[2][5] = LinearPoly::constant(n, hs[0]);
+        matrix[3][9] = LinearPoly::constant(n, g); // A_1 = G^{r_1};
+        matrix[4][6] = LinearPoly::constant(n, g);
+        matrix[4][9] = LinearPoly::constant(n, hs[1]);
+        matrix[4][4] = LinearPoly::constant(n, hs[2]);
+        for i in 0..d - 1 {
+            matrix[5 + 2 * i][10 + i] = LinearPoly::constant(n, g);
+            matrix[5 + 2 * i + 1][6] = LinearPoly::single(n, 5 + 2 * i - 1);
+            matrix[5 + 2 * i + 1][9 + d + i] = LinearPoly::constant(n, -hs[1]);
+            matrix[5 + 2 * i + 1][10 + i] = LinearPoly::constant(n, hs[1]);
+            matrix[5 + 2 * i + 1][7] = LinearPoly::constant(n, -hs[2 + i]);
+            matrix[5 + 2 * i + 1][4] = LinearPoly::constant(n, hs[3 + i]);
+        }
 
-    AlgLang { matrix }
+        matrix[3 + 2 * d][2] = LinearPoly::constant(n, g);
+        matrix[3 + 2 * d][0] = LinearPoly::constant(n, -g);
+        matrix[3 + 2 * d][6] = LinearPoly::constant(n, -g);
+        matrix[3 + 2 * d + 1][6] = LinearPoly::single(n, 2);
+        matrix[3 + 2 * d + 1][7] = LinearPoly::constant(n, -g);
+        matrix[3 + 2 * d + 1][8] = LinearPoly::constant(n, -hs[0]);
+
+        for i in 0..d - 1 {
+            matrix[3 + 2 * d + 2 + i][6] = LinearPoly::single(n, 3 + 2 * i);
+            matrix[3 + 2 * d + 2 + i][9 + d + i] = LinearPoly::constant(n, -g);
+        }
+        matrix
+    };
+
+    // Instance: Tcal,Xcal,Acal,[(Ai,Di)] for 1..d, 1,1,[1..1] for 1..d-1
+    // Witness: t,r_t,x,r_x,alpha,r_alpha,x-t,alpha*(x-t),r_alpha*(x-t),[r_i] for 1..d,[r_i*(x-t)] for 1..d-1
+    let lang = AlgLang { matrix };
+    let (inst, wit) = {
+        let t: P::ScalarField = UniformRand::rand(&mut rng);
+        let r_t: P::ScalarField = UniformRand::rand(&mut rng);
+        let x: P::ScalarField = UniformRand::rand(&mut rng);
+        let r_x: P::ScalarField = UniformRand::rand(&mut rng);
+        let alpha: P::ScalarField = UniformRand::rand(&mut rng);
+        let r_alpha: P::ScalarField = UniformRand::rand(&mut rng);
+        let x_minus_t = x - t;
+        let alpha_x_minus_t = alpha * (x_minus_t);
+        let r_alpha_x_minus_t = r_alpha * (x_minus_t);
+
+        let rs: Vec<P::ScalarField> = (0..d).map(|_i| UniformRand::rand(&mut rng)).collect();
+        let rs_x_minus_t: Vec<P::ScalarField> =
+            rs.iter().take(d - 1).map(|ri| *ri * x_minus_t).collect();
+
+        let wit: AlgWit<P::G1> = AlgWit(
+            vec![
+                t,
+                r_t,
+                x,
+                r_x,
+                alpha,
+                r_alpha,
+                x_minus_t,
+                alpha_x_minus_t,
+                r_alpha_x_minus_t,
+            ]
+            .into_iter()
+            .chain(rs.clone())
+            .chain(rs_x_minus_t)
+            .collect(),
+        );
+
+        let tcal = g * t + hs[0] * r_t;
+        let xcal = g * x + hs[0] * r_x;
+        let acal = g * alpha + hs[0] * r_alpha;
+        let a_s: Vec<_> = rs.iter().map(|ri| g * ri).collect();
+        let d_s: Vec<_> = rs
+            .iter()
+            .enumerate()
+            .map(|(i, ri)| g * (field_pow(x - t, i + 1)) + hs[1] * ri + hs[2 + i] * alpha)
+            .collect();
+        let ad_s: Vec<P::G1> = a_s
+            .into_iter()
+            .zip(d_s)
+            .flat_map(|(ai, di)| vec![ai, di])
+            .collect();
+        let inst: AlgInst<P::G1> = AlgInst(
+            vec![tcal, xcal, acal]
+                .into_iter()
+                .chain(ad_s)
+                .chain(vec![P::G1::zero(); d + 1])
+                .collect(),
+        );
+
+        (inst, wit)
+    };
+
+    let lang_valid = lang.contains(&inst, &wit);
+    println!("Language valid? {lang_valid:?}");
 }
 
 fn main() {
+    test_field_pow();
+    test_ublu_consistency::<CC>();
     test_ch20_correctness();
 }

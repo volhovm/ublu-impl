@@ -15,6 +15,15 @@ fn binomial(n: usize, k: usize) -> usize {
     }
 }
 
+fn test_binomial() {
+    assert!(binomial(1, 1) == 1);
+    assert!(binomial(9, 2) == 36);
+    assert!(binomial(4, 3) == 4);
+    assert!(binomial(5, 4) == 5);
+    assert!(binomial(12, 5) == 792);
+    println!("Binomial test passed")
+}
+
 fn field_pow<F: PrimeField>(base: F, exp: usize) -> F {
     let mut res: F = F::one();
     let mut exp2 = exp;
@@ -40,6 +49,7 @@ fn test_field_pow() {
     assert!(field_pow(x, 3) == x * x * x);
     assert!(field_pow(x, 4) == x * x * x * x);
     assert!(field_pow(x, 5) == x * x * x * x * x);
+    println!("Field test passed")
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -691,7 +701,8 @@ pub fn test_ublu_consistency<P: Pairing>() {
 }
 
 fn main() {
-    //test_field_pow();
+    test_field_pow();
+    test_binomial();
     test_ublu_consistency::<CC>();
-    //test_ch20_correctness();
+    test_ch20_correctness();
 }

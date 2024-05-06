@@ -5,7 +5,7 @@ use ark_bls12_381::Bls12_381;
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{One, PrimeField, Zero};
 use ark_std::UniformRand;
-use rand::thread_rng;
+use rand::{thread_rng, RngCore};
 
 fn binomial(n: usize, k: usize) -> usize {
     if k == 0 {
@@ -174,12 +174,11 @@ pub struct CH20Proof<P: Pairing> {
     pub d: Vec<P::G2>,
 }
 
-pub fn ch20_setup<P: Pairing>() -> CH20CRS<P>
+pub fn ch20_setup<P: Pairing>(rng: &mut dyn RngCore) -> CH20CRS<P>
 where
     P::ScalarField: UniformRand,
 {
-    let mut rng = thread_rng();
-    let e_td: P::ScalarField = <P::ScalarField as UniformRand>::rand(&mut rng);
+    let e_td: P::ScalarField = <P::ScalarField as UniformRand>::rand(rng);
     let e: P::G2 = P::G2::generator() * e_td;
     CH20CRS { e }
 }
@@ -436,7 +435,7 @@ fn test_ch20_correctness() {
     let lang_valid = lang.contains(&inst, &wit);
     println!("Language valid? {lang_valid:?}");
 
-    let crs: CH20CRS<CC> = ch20_setup();
+    let crs: CH20CRS<CC> = ch20_setup(&mut thread_rng());
     let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
     let res = ch20_verify(&crs, &lang, &inst, &proof);
     println!("Verification result: {:?}", res);

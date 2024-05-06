@@ -5,9 +5,9 @@ use ark_std::Zero;
 use rand::{RngCore, SeedableRng};
 
 use crate::{
+    ch20::{ch20_setup, CH20Proof, CH20CRS},
     commitment::Pedersen,
     elgamal::{Cipher, Elgamal, ElgamalSk},
-    main::{ch20_setup, CH20Proof, CH20CRS},
 };
 
 pub struct Ublu<P: Pairing> {

@@ -2,10 +2,9 @@ use ark_ec::Group;
 use ark_ff::UniformRand;
 use rand::RngCore;
 
-pub struct Pedersen<G: Group> {
-    pub G: G,
-    pub H: G,
-    pub rng: Box<dyn RngCore>,
+pub struct PedersenParams<G: Group> {
+    pub g: G,
+    pub h: G,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -14,33 +13,27 @@ pub struct Commitment<G: Group> {
     pub rnd: G::ScalarField,
 }
 
-impl<G: Group> Pedersen<G> {
-    pub fn new(mut rng: impl RngCore + 'static) -> Self {
-        Pedersen {
-            G: G::rand(&mut rng),
-            H: G::rand(&mut rng),
-            rng: Box::new(rng),
+impl<G: Group> PedersenParams<G> {
+    pub fn new<RNG: RngCore>(rng: &mut RNG) -> Self {
+        PedersenParams {
+            g: G::rand(rng),
+            h: G::rand(rng),
         }
     }
 
-    pub fn commit(&mut self, msg: &G::ScalarField, rnd: Option<G::ScalarField>) -> Commitment<G> {
-        match rnd {
-            Some(rnd) => Commitment {
-                com: self.G * msg + self.H * rnd,
-                rnd,
-            },
-            None => {
-                let sampled_rng = <G::ScalarField as UniformRand>::rand(&mut self.rng);
-                Commitment {
-                    com: self.G * msg + self.H * sampled_rng,
-                    rnd: sampled_rng,
-                }
-            }
+    pub fn commit_raw(&self, msg: &G::ScalarField, rnd: G::ScalarField) -> Commitment<G> {
+        Commitment {
+            com: self.g * msg + self.h * rnd,
+            rnd,
         }
     }
 
-    pub fn verify(&mut self, msg: &G::ScalarField, commitment: &Commitment<G>) -> bool {
-        let reference = self.commit(msg, Some(commitment.rnd));
+    pub fn commit<RNG: RngCore>(&self, msg: &G::ScalarField, rng: &mut RNG) -> Commitment<G> {
+        self.commit_raw(msg, <G::ScalarField as UniformRand>::rand(rng))
+    }
+
+    pub fn verify(&self, msg: &G::ScalarField, commitment: &Commitment<G>) -> bool {
+        let reference = self.commit_raw(msg, commitment.rnd);
         &reference == commitment
     }
 }
@@ -57,9 +50,9 @@ mod tests {
     #[test]
     fn test_sunshine() {
         let mut rng = AesRng::seed_from_u64(1);
-        let mut pedersen: Pedersen<<Bls12_381 as Pairing>::G1> = Pedersen::new(rng);
+        let pedersen: PedersenParams<<Bls12_381 as Pairing>::G1> = PedersenParams::new(&mut rng);
         let msg = <Bls12_381 as Pairing>::ScalarField::from(42);
-        let commitment = pedersen.commit(&msg, None);
+        let commitment = pedersen.commit(&msg, &mut rng);
         assert!(pedersen.verify(&msg, &commitment));
     }
 }

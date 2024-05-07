@@ -143,15 +143,30 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
             t_wm[i][i] = P::ScalarField::one();
         }
 
-        t_wa[2] = u_x; // x + U_x
-        t_wa[3] = u_rx; // rx + U_rx
-        t_wa[4] = u_alpha; // α + U_α
+        // x' = x + U_x
+        t_wa[2] = u_x;
+
+        // r_x' = r_x + U_rx
+        t_wa[3] = u_rx;
+
+        // α' = U_α
+        t_wm[4][4] = P::ScalarField::zero();
+        t_wa[4] = u_alpha;
+
+        // α' = U_α
+        t_wm[5][5] = P::ScalarField::zero();
         t_wa[5] = u_ralpha; // rα + U_rα
-        t_wa[6] = u_x; // (x-t) + U_x
-        t_wm[7][4] = u_x; // α*(x-t) + α*U_x
-        t_wm[7][6] = u_alpha; //         + (x-t)*U_α
-        t_wa[7] = u_x * u_alpha; // + U_x*U_α
-        t_wm[8][5] = u_x; // rα*(x-t) + rα*U_x
+
+        // s_{x-t}' = s_(x-t) + U_x
+        t_wa[6] = u_x;
+
+        /////t_wm[7][4] = u_x; //      α*(x-t) + α*U_x
+
+        t_wm[7][6] = u_alpha; //          + (x-t)*U_α
+        t_wa[7] = u_x * u_alpha; //       + U_x*U_α
+
+        /////t_wm[8][5] = u_x; // rα*(x-t) + rα*U_x
+
         t_wm[8][6] = u_ralpha; //         + (x-t)*U_rα
         t_wa[8] = u_x * u_ralpha; // + U_x*U_α
 
@@ -159,12 +174,14 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
             field_pow(x, i - j) * P::ScalarField::from(binomial(i, j) as u64)
         };
 
+        // r_i' = ∑ v_coeff(i,j,U_x) r_i + U_{r_i}
         for i in 0..d {
             for j in 0..i + 1 {
                 t_wm[9 + i][9 + j] = v_coeff(i + 1, j + 1, u_x)
             }
             t_wa[9 + i] = u_rs[i]
         }
+
         for i in 0..d - 1 {
             for j in 0..i + 1 {
                 t_wm[9 + d + i][9 + d + j] = v_coeff(i + 1, j + 1, u_x);
@@ -184,13 +201,15 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
             }
             t_xa[3 + 2 * i] = g * u_rs[i];
             // TODO what are these ws[4]???
+            // ws[4] is w_alpha it seems. It needs to be 0 in the previous proof iteration though.
             //let sumterm: P::G1 = (0..(i + 1))
             //    .map(|j| -hs[2 + j] * (ws[4] * v_coeff(i + 1, j + 1, u_x)))
             //    .fold(P::ScalarField::zero(), |x, y| x + y);
-            //t_xa[4 + 2 * i] = g * (field_pow(u_x, i + 1))
-            //    + hs[2 + i] * (ws[4] + u_alpha)
-            //    + sumterm
-            //    + hs[1] * u_rs[i];
+            t_xa[4 + 2 * i] = g * (field_pow(u_x, i + 1))
+                + hs[2 + i] * (u_alpha)
+                //+ hs[2 + i] * (ws[4] + u_alpha)
+                //+ sumterm
+                + hs[1] * u_rs[i];
         }
 
         //

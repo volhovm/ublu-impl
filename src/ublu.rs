@@ -4,7 +4,7 @@ use ark_std::Zero;
 use rand::RngCore;
 
 use crate::{
-    ch20::{ch20_setup, CH20Proof, CH20CRS},
+    ch20::{CH20Proof, CH20CRS},
     commitment::PedersenParams,
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
 };
@@ -50,7 +50,7 @@ impl<P: Pairing> Ublu<P> {
         for _i in 0..d {
             w.push(<P::G1 as UniformRand>::rand(rng));
         }
-        let ch20: CH20CRS<P> = ch20_setup(rng);
+        let ch20: CH20CRS<P> = CH20CRS::setup(rng);
         Ublu {
             lambda,
             d,

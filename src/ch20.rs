@@ -123,42 +123,20 @@ pub struct CH20CRS<P: Pairing> {
     pub e: P::G2,
 }
 
+impl<P: Pairing> CH20CRS<P> {
+    pub fn setup(rng: &mut dyn RngCore) -> Self
+    where
+        P::ScalarField: UniformRand,
+    {
+        let e_td: P::ScalarField = <P::ScalarField as UniformRand>::rand(rng);
+        let e: P::G2 = P::G2::generator() * e_td;
+        CH20CRS { e }
+    }
+}
+
 pub struct CH20Proof<P: Pairing> {
     pub a: Vec<P::G1>,
     pub d: Vec<P::G2>,
-}
-
-pub fn ch20_setup<P: Pairing>(rng: &mut dyn RngCore) -> CH20CRS<P>
-where
-    P::ScalarField: UniformRand,
-{
-    let e_td: P::ScalarField = <P::ScalarField as UniformRand>::rand(rng);
-    let e: P::G2 = P::G2::generator() * e_td;
-    CH20CRS { e }
-}
-
-pub fn ch20_prove<P: Pairing>(
-    crs: &CH20CRS<P>,
-    lang: &AlgLang<P::G1>,
-    inst: &AlgInst<P::G1>,
-    wit: &AlgWit<P::G1>,
-) -> CH20Proof<P>
-where
-    P::ScalarField: UniformRand,
-{
-    let mut rng = thread_rng();
-    let r: Vec<P::ScalarField> = (0..(lang.wit_size()))
-        .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
-        .collect();
-    let matrix = lang.instantiate_matrix(&inst.0);
-    let a: Vec<P::G1> = mul_mat_by_vec_g_f(&matrix, &r);
-    let d: Vec<P::G2> = wit
-        .0
-        .iter()
-        .zip(r.iter())
-        .map(|(w_i, r_i)| crs.e * w_i + P::G2::generator() * r_i)
-        .collect();
-    CH20Proof { a, d }
 }
 
 #[derive(Debug)]
@@ -166,37 +144,120 @@ pub enum CH20VerifierError {
     CH20GenericError(String),
 }
 
-pub fn ch20_verify<P: Pairing>(
-    crs: &CH20CRS<P>,
-    lang: &AlgLang<P::G1>,
-    inst: &AlgInst<P::G1>,
-    proof: &CH20Proof<P>,
-) -> Result<(), CH20VerifierError> {
-    let mut lhs: Vec<Vec<P::G1>> = vec![vec![]; lang.inst_size()];
-    let mut rhs: Vec<Vec<P::G2>> = vec![vec![]; lang.inst_size()];
-    let mat = lang.instantiate_matrix(&inst.0);
-    println!("{mat:?}");
-    for i in 0..lang.inst_size() {
-        for j in 0..lang.wit_size() {
-            lhs[i].push(mat[i][j]);
-            rhs[i].push(proof.d[j]);
-        }
-        lhs[i].push(inst.0[i]);
-        rhs[i].push(-crs.e);
-        lhs[i].push(proof.a[i]);
-        rhs[i].push(-P::G2::generator());
+impl<P: Pairing> CH20Proof<P> {
+    pub fn prove(
+        crs: &CH20CRS<P>,
+        lang: &AlgLang<P::G1>,
+        inst: &AlgInst<P::G1>,
+        wit: &AlgWit<P::G1>,
+    ) -> CH20Proof<P>
+    where
+        P::ScalarField: UniformRand,
+    {
+        let mut rng = thread_rng();
+        let r: Vec<P::ScalarField> = (0..(lang.wit_size()))
+            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+            .collect();
+        let matrix = lang.instantiate_matrix(&inst.0);
+        let a: Vec<P::G1> = mul_mat_by_vec_g_f(&matrix, &r);
+        let d: Vec<P::G2> = wit
+            .0
+            .iter()
+            .zip(r.iter())
+            .map(|(w_i, r_i)| crs.e * w_i + P::G2::generator() * r_i)
+            .collect();
+        CH20Proof { a, d }
     }
-    // TODO: for efficiency, recombine equations first with a random
-    // element, this saves up quite some pairings
-    for (l, r) in lhs.iter().zip(rhs.iter()) {
-        let pairing_res = P::multi_pairing(l, r);
-        if pairing_res != Zero::zero() {
-            return Err(CH20VerifierError::CH20GenericError(From::from(
-                "Pairing is nonzero",
-            )));
+
+    pub fn verify(
+        &self,
+        crs: &CH20CRS<P>,
+        lang: &AlgLang<P::G1>,
+        inst: &AlgInst<P::G1>,
+    ) -> Result<(), CH20VerifierError> {
+        let mut lhs: Vec<Vec<P::G1>> = vec![vec![]; lang.inst_size()];
+        let mut rhs: Vec<Vec<P::G2>> = vec![vec![]; lang.inst_size()];
+        let mat = lang.instantiate_matrix(&inst.0);
+        println!("{mat:?}");
+        for i in 0..lang.inst_size() {
+            for j in 0..lang.wit_size() {
+                lhs[i].push(mat[i][j]);
+                rhs[i].push(self.d[j]);
+            }
+            lhs[i].push(inst.0[i]);
+            rhs[i].push(-crs.e);
+            lhs[i].push(self.a[i]);
+            rhs[i].push(-P::G2::generator());
+        }
+        // TODO: for efficiency, recombine equations first with a random
+        // element, this saves up quite some pairings
+        for (l, r) in lhs.iter().zip(rhs.iter()) {
+            let pairing_res = P::multi_pairing(l, r);
+            if pairing_res != Zero::zero() {
+                return Err(CH20VerifierError::CH20GenericError(From::from(
+                    "Pairing is nonzero",
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn update(
+        &self,
+        crs: &CH20CRS<P>,
+        lang: &AlgLang<P::G1>,
+        inst: &AlgInst<P::G1>,
+        trans: &CH20Trans<P>,
+    ) -> CH20Proof<P> {
+        let mut rng = thread_rng();
+        let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
+            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+            .collect();
+
+        let a_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(
+            &trans.t_am,
+            &self
+                .a
+                .clone()
+                .into_iter()
+                .chain(inst.0.clone())
+                .collect::<Vec<P::G1>>(),
+        );
+        let a_prime_e2: Vec<P::G1> = trans.t_aa.clone();
+
+        let inst_prime = trans.update_instance(inst);
+        let mat_prime = lang.instantiate_matrix(&inst_prime.0);
+        let a_prime_e3: Vec<P::G1> = mul_mat_by_vec_g_f(&mat_prime, &s_hat);
+
+        let a_prime: Vec<P::G1> = a_prime_e1
+            .into_iter()
+            .zip(a_prime_e2)
+            .zip(a_prime_e3)
+            .map(|((x, y), z)| x + y + z)
+            .collect();
+
+        let d_prime_e1: Vec<P::G2> = mul_mat_by_vec_f_g(&trans.t_wm, &self.d);
+        let d_prime_e2: Vec<P::G2> = trans.t_wa.clone().into_iter().map(|x| crs.e * x).collect();
+        let d_prime_e3: Vec<P::G2> = trans
+            .t_wa
+            .clone()
+            .into_iter()
+            .zip(s_hat)
+            .map(|(x, y)| P::G2::generator() * (x + y))
+            .collect();
+
+        let d_prime: Vec<P::G2> = d_prime_e1
+            .into_iter()
+            .zip(d_prime_e2)
+            .zip(d_prime_e3)
+            .map(|((x, y), z)| x + y + z)
+            .collect();
+
+        CH20Proof {
+            a: a_prime,
+            d: d_prime,
         }
     }
-    Ok(())
 }
 
 pub struct CH20Trans<P: Pairing> {
@@ -275,11 +336,12 @@ impl<P: Pairing> CH20Trans<P> {
     /// Does a probabilistic check that the transformation is blinding
     /// compatible. If returns false, it's not. If returns true, the
     /// language is blinding compatible with some probability.
-    pub fn is_blinding_compatible(&self, lang: &AlgLang<P::G1>, inst: &AlgInst<P::G1>) -> bool {
-        let mut rng = thread_rng();
-        let s: Vec<P::ScalarField> = (0..(lang.wit_size()))
-            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
-            .collect();
+    pub fn is_blinding_compatible_raw(
+        &self,
+        lang: &AlgLang<P::G1>,
+        inst: &AlgInst<P::G1>,
+        s: Vec<P::ScalarField>,
+    ) -> bool {
         let matrix1 = lang.instantiate_matrix(&inst.0);
         let mx_s = mul_mat_by_vec_g_f(&matrix1, &s);
 
@@ -297,64 +359,28 @@ impl<P: Pairing> CH20Trans<P> {
 
         let rhs = mul_mat_by_vec_g_f(&matrix2, &wit2.0);
 
+        if rhs != lhs {
+            println!("Not blinding compatible, indices:");
+            for i in 0..rhs.len() {
+                if lhs[i] != rhs[i] {
+                    println!("    {i:?}, lhs: {:?}, rhs: {:?}", lhs[i], rhs[i]);
+                }
+            }
+        }
+
         rhs == lhs
     }
-}
 
-pub fn ch20_update<P: Pairing>(
-    crs: &CH20CRS<P>,
-    lang: &AlgLang<P::G1>,
-    inst: &AlgInst<P::G1>,
-    proof: &CH20Proof<P>,
-    trans: &CH20Trans<P>,
-) -> CH20Proof<P> {
-    let mut rng = thread_rng();
-    let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
-        .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
-        .collect();
+    /// Does a probabilistic check that the transformation is blinding
+    /// compatible. If returns false, it's not. If returns true, the
+    /// language is blinding compatible with some probability.
+    pub fn is_blinding_compatible(&self, lang: &AlgLang<P::G1>, inst: &AlgInst<P::G1>) -> bool {
+        let mut rng = thread_rng();
+        let s: Vec<P::ScalarField> = (0..(lang.wit_size()))
+            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+            .collect();
 
-    let a_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(
-        &trans.t_am,
-        &proof
-            .a
-            .clone()
-            .into_iter()
-            .chain(inst.0.clone())
-            .collect::<Vec<P::G1>>(),
-    );
-    let a_prime_e2: Vec<P::G1> = trans.t_aa.clone();
-
-    let inst_prime = trans.update_instance(inst);
-    let mat_prime = lang.instantiate_matrix(&inst_prime.0);
-    let a_prime_e3: Vec<P::G1> = mul_mat_by_vec_g_f(&mat_prime, &s_hat);
-
-    let a_prime: Vec<P::G1> = a_prime_e1
-        .into_iter()
-        .zip(a_prime_e2)
-        .zip(a_prime_e3)
-        .map(|((x, y), z)| x + y + z)
-        .collect();
-
-    let d_prime_e1: Vec<P::G2> = mul_mat_by_vec_f_g(&trans.t_wm, &proof.d);
-    let d_prime_e2: Vec<P::G2> = trans.t_wa.clone().into_iter().map(|x| crs.e * x).collect();
-    let d_prime_e3: Vec<P::G2> = trans
-        .t_wa
-        .clone()
-        .into_iter()
-        .zip(s_hat)
-        .map(|(x, y)| P::G2::generator() * (x + y))
-        .collect();
-
-    let d_prime: Vec<P::G2> = d_prime_e1
-        .into_iter()
-        .zip(d_prime_e2)
-        .zip(d_prime_e3)
-        .map(|((x, y), z)| x + y + z)
-        .collect();
-
-    CH20Proof {
-        a: a_prime,
-        d: d_prime,
+        self.is_blinding_compatible_raw(lang, inst, s)
     }
 }
 
@@ -389,9 +415,9 @@ pub(crate) mod tests {
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
 
-        let crs: CH20CRS<CC> = ch20_setup(&mut thread_rng());
-        let proof: CH20Proof<CC> = ch20_prove(&crs, &lang, &inst, &wit);
-        let res = ch20_verify(&crs, &lang, &inst, &proof);
+        let crs: CH20CRS<CC> = CH20CRS::setup(&mut thread_rng());
+        let proof: CH20Proof<CC> = CH20Proof::prove(&crs, &lang, &inst, &wit);
+        let res = proof.verify(&crs, &lang, &inst);
         println!("Verification result: {:?}", res);
 
         let trans: CH20Trans<CC> = {
@@ -422,6 +448,7 @@ pub(crate) mod tests {
                 t_wa,
             }
         };
+
         let blinding_compatible = trans.is_blinding_compatible(&lang, &inst);
         println!("Transformaion blinding compatible? {blinding_compatible:?}");
         let inst2 = trans.update_instance(&inst);
@@ -431,8 +458,8 @@ pub(crate) mod tests {
         println!("Transformaion blinding compatible wrt new inst? {blinding_compatible2:?}");
         let lang_valid_2 = lang.contains(&inst2, &wit2);
         println!("Transformed language valid? {lang_valid_2:?}");
-        let proof2 = ch20_update(&crs, &lang, &inst, &proof, &trans);
-        let res2 = ch20_verify(&crs, &lang, &inst2, &proof2);
+        let proof2 = proof.update(&crs, &lang, &inst, &trans);
+        let res2 = proof2.verify(&crs, &lang, &inst2);
         println!("Transformed proof valid?: {:?}", res2);
     }
 }

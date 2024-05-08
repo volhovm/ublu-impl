@@ -122,22 +122,20 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let lang_valid = lang.contains(&inst, &wit);
     println!("Language valid? {lang_valid:?}");
 
-    // Instance: Tcal,Xcal,Acal,[(Ai,Di)] for 1..d, 1,1,[1..1] for 1..d-1
-    // Witness: t,r_t,x,r_x,alpha,r_alpha,x-t,alpha*(x-t),r_alpha*(x-t),[r_i] for 1..d,[r_i*(x-t)] for 1..d-1
-    let _trans: CH20Trans<P> = {
+    let trans: CH20Trans<P> = {
         let u_x: P::ScalarField = UniformRand::rand(&mut rng);
         let u_rx: P::ScalarField = UniformRand::rand(&mut rng);
         let u_alpha: P::ScalarField = UniformRand::rand(&mut rng);
         let u_ralpha: P::ScalarField = UniformRand::rand(&mut rng);
         let u_rs: Vec<P::ScalarField> = (0..d).map(|_i| UniformRand::rand(&mut rng)).collect();
 
-        let mut t_xm: Vec<Vec<P::ScalarField>> = vec![vec![P::ScalarField::zero(); n]; n];
-        let mut t_xa: Vec<P::G1> = vec![P::G1::zero(); m];
+        let mut t_am: Vec<Vec<P::ScalarField>> = vec![vec![P::ScalarField::zero(); 2 * n]; n];
+        let mut t_aa: Vec<P::G1> = vec![P::G1::zero(); n];
         let mut t_wm: Vec<Vec<P::ScalarField>> = vec![vec![P::ScalarField::zero(); m]; m];
         let mut t_wa: Vec<P::ScalarField> = vec![P::ScalarField::zero(); m];
 
         for i in 0..n {
-            t_xm[i][i] = P::ScalarField::one();
+            t_am[i][i] = P::ScalarField::one();
         }
         for i in 0..m {
             t_wm[i][i] = P::ScalarField::one();
@@ -182,6 +180,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
             t_wa[9 + i] = u_rs[i]
         }
 
+        // s_{r_{i}(x-t)}' = ...
         for i in 0..d - 1 {
             for j in 0..i + 1 {
                 t_wm[9 + d + i][9 + d + j] = v_coeff(i + 1, j + 1, u_x);
@@ -191,47 +190,48 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
             t_wa[9 + d + i] = u_rs[i] * u_x;
         }
 
-        t_xa[1] = g * u_x + hs[0] * u_rx; // Xcal * G^{U_x} * H0^{U_rx}
-        t_xa[2] = g * u_alpha + hs[0] * u_ralpha; // Acal * G^{U_α} * H0^{U_rα}
+        t_aa[1] = g * u_x + hs[0] * u_rx; // Xcal * G^{U_x} * H0^{U_rx}
 
-        for i in 0..d {
+        t_am[2][2] = P::ScalarField::zero();
+        t_aa[2] = g * u_alpha + hs[0] * u_ralpha; // Acal * G^{U_α} * H0^{U_rα}
+
+        // A1
+        t_aa[3] = g * u_rs[0];
+        // D1
+        t_aa[4] = g * u_x + hs[1] * u_rs[0] + hs[2] * (u_alpha);
+
+        for i in 1..d {
             for j in 0..(i + 1) {
-                t_xm[3 + 2 * i][3 + 2 * j] = v_coeff(i + 1, j + 1, u_x);
-                t_xm[4 + 2 * i][4 + 2 * j] = v_coeff(i + 1, j + 1, u_x);
+                t_am[3 + 2 * i][3 + 2 * j] = v_coeff(i + 1, j + 1, u_x);
+                t_am[4 + 2 * i][4 + 2 * j] = v_coeff(i, j, u_x);
             }
-            t_xa[3 + 2 * i] = g * u_rs[i];
-            // TODO what are these ws[4]???
-            // ws[4] is w_alpha it seems. It needs to be 0 in the previous proof iteration though.
-            //let sumterm: P::G1 = (0..(i + 1))
-            //    .map(|j| -hs[2 + j] * (ws[4] * v_coeff(i + 1, j + 1, u_x)))
-            //    .fold(P::ScalarField::zero(), |x, y| x + y);
-            t_xa[4 + 2 * i] = g * (field_pow(u_x, i + 1))
-                + hs[2 + i] * (u_alpha)
-                //+ hs[2 + i] * (ws[4] + u_alpha)
-                //+ sumterm
-                + hs[1] * u_rs[i];
+            for j in 0..i {
+                t_am[4 + 2 * i][n + 4 + 2 * j] =
+                    field_pow(u_x, i - j) * P::ScalarField::from(binomial(i, j + 1) as u64)
+            }
+            t_aa[3 + 2 * i] = g * u_rs[i];
+            t_aa[4 + 2 * i] = g * (field_pow(u_x, i + 1)) + hs[1] * u_rs[i] + hs[2 + i] * u_alpha;
         }
 
-        //
-        // //T_reduce_map = {var('U_α'): 0, var('w_α'): 0}
-        // T_reduce_map = {}
-        // Tx1 = Matrix(subs_mat(t_xm,T_reduce_map))
-        // Tx2 = vector(subs_vec(t_xa,T_reduce_map))
-        // print((Tx2[6]))
-        // Tw1 = Matrix(subs_mat(t_wm,T_reduce_map))
-        // Tw2 = vector(subs_vec(t_wa,T_reduce_map))
-        //
+        t_am[4 + 2 * d][4 + 2 * d] = P::ScalarField::zero();
 
-        let t_am: Vec<Vec<P::ScalarField>> = t_xm
-            .clone()
-            .into_iter()
-            .map(|row| {
-                row.into_iter()
-                    .chain(vec![P::ScalarField::zero(); m])
-                    .collect()
-            })
-            .collect();
-        let t_aa = t_xa.clone();
+        for i in 1..d - 1 {
+            for j in 0..(i + 1) {
+                t_am[5 + 2 * d + i][5 + 2 * d + j] = v_coeff(i + 1, j + 1, u_x);
+                t_am[5 + 2 * d + i][n + 3 + j] = v_coeff(i + 1, j + 1, u_x) * u_x;
+                t_am[5 + 2 * d + i][3 + j] = -v_coeff(i + 1, j + 1, u_x) * u_x;
+            }
+        }
+
+        let mut t_xm: Vec<Vec<P::ScalarField>> = vec![vec![P::ScalarField::zero(); n]; n];
+        let mut t_xa: Vec<P::G1> = vec![P::G1::zero(); n];
+
+        for i in 0..n {
+            for j in 0..n {
+                t_xm[i][j] = t_am[i][j] + t_am[i][n + j];
+            }
+            t_xa[i] = t_aa[i];
+        }
 
         CH20Trans {
             t_am,
@@ -242,4 +242,14 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
             t_wa,
         }
     };
+
+    let blinding_compatible = trans.is_blinding_compatible(&lang, &inst);
+    println!("Transformaion blinding compatible? {blinding_compatible:?}");
+    let inst2 = trans.update_instance(&inst);
+    let wit2 = trans.update_witness(&wit);
+    let blinding_compatible2 = trans.is_blinding_compatible(&lang, &inst2);
+    println!(":#? {:#?}", inst2);
+    println!("Transformaion blinding compatible wrt new inst? {blinding_compatible2:?}");
+    let lang_valid_2 = lang.contains(&inst2, &wit2);
+    println!("Transformed language valid? {lang_valid_2:?}");
 }

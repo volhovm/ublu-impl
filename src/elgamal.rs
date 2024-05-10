@@ -3,20 +3,24 @@ use ark_ff::UniformRand;
 use rand::RngCore;
 
 pub const MAX_TRIES: u32 = 10000;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElgamalParams<G: Group> {
     pub g: G,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cipher<G: Group> {
     pub a: G,
     pub b: G,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElgamalPk<G: Group> {
     pub h: G,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElgamalSk<G: Group> {
     pub sk: G::ScalarField,
 }

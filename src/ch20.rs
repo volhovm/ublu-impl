@@ -134,6 +134,7 @@ impl<P: Pairing> CH20CRS<P> {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CH20Proof<P: Pairing> {
     pub a: Vec<P::G1>,
     pub d: Vec<P::G2>,

@@ -80,7 +80,7 @@ impl<G: Group> AlgLang<G> {
     }
 }
 
-fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> Vec<G> {
+pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> Vec<G> {
     let n = mat.len();
     let m = mat[0].len();
     let mut res: Vec<G> = vec![Zero::zero(); n];
@@ -92,7 +92,7 @@ fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> Vec<G
     res
 }
 
-fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> Vec<G> {
+pub fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> Vec<G> {
     let n = mat.len();
     let m = mat[0].len();
     let mut res: Vec<G> = vec![Zero::zero(); n];
@@ -104,7 +104,7 @@ fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> Vec<G
     res
 }
 
-fn mul_mat_by_vec_f_f<G: Group>(
+pub fn mul_mat_by_vec_f_f<G: Group>(
     mat: &[Vec<G::ScalarField>],
     vec: &[G::ScalarField],
 ) -> Vec<G::ScalarField> {
@@ -346,7 +346,7 @@ impl<P: Pairing> CH20Trans<P> {
         let matrix1 = lang.instantiate_matrix(&inst.0);
         let mx_s = mul_mat_by_vec_g_f(&matrix1, &s);
 
-        let lhs = mul_mat_by_vec_f_g(
+        let lhs_term1 = mul_mat_by_vec_f_g(
             &self.t_am,
             &mx_s
                 .into_iter()
@@ -354,18 +354,29 @@ impl<P: Pairing> CH20Trans<P> {
                 .collect::<Vec<P::G1>>(),
         );
 
+        let lhs: Vec<P::G1> = lhs_term1
+            .into_iter()
+            .zip(self.t_aa.clone())
+            .map(|(x, y)| x + y)
+            .collect();
+
         let inst2 = self.update_instance(inst);
         let matrix2 = lang.instantiate_matrix(&inst2.0);
-        let wit2 = self.update_witness(&AlgWit(s));
+        let s2 = self.update_witness(&AlgWit(s));
 
-        let rhs = mul_mat_by_vec_g_f(&matrix2, &wit2.0);
+        let rhs = mul_mat_by_vec_g_f(&matrix2, &s2.0);
 
         if rhs != lhs {
             println!("Not blinding compatible, indices:");
             for i in 0..rhs.len() {
-                if lhs[i] != rhs[i] {
-                    println!("    {i:?}, lhs: {:?}, rhs: {:?}", lhs[i], rhs[i]);
-                }
+                println!(
+                    "  {i:?}: {}",
+                    if lhs[i] != rhs[i] {
+                        " --- NOT EQUAL --- "
+                    } else {
+                        "OK"
+                    }
+                );
             }
         }
 

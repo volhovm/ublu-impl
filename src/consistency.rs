@@ -4,7 +4,7 @@ use ark_std::UniformRand;
 use rand::thread_rng;
 
 use crate::{
-    ch20::{AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, LinearPoly, CH20CRS},
+    ch20::{self, AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, LinearPoly, CH20CRS},
     utils::{binomial, field_pow},
 };
 
@@ -12,7 +12,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let mut rng = thread_rng();
     let g: P::G1 = UniformRand::rand(&mut rng);
 
-    let d = 4;
+    let d = 3;
     // Number of instance elements
     let n = 3 * d + 4;
     // Number of witness elements
@@ -58,22 +58,43 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         matrix
     };
 
+    let matrix_core = {
+        let mut matrix2: Vec<Vec<LinearPoly<P::G1>>> = matrix.clone();
+
+        matrix2.remove(3 + 2 * d + 1); // TODO double check
+        matrix2.remove(2);
+
+        for i in 0..n - 2 {
+            matrix2[i].remove(8);
+            matrix2[i].remove(7);
+            matrix2[i].remove(5);
+            matrix2[i].remove(4);
+        }
+
+        matrix2
+    };
+
     // Instance: Tcal,Xcal,Acal,[(Ai,Di)] for 1..d, 1,1,[1..1] for 1..d-1
     // Witness: t,r_t,x,r_x,alpha,r_alpha,x-t,alpha*(x-t),r_alpha*(x-t),[r_i] for 1..d,[r_i*(x-t)] for 1..d-1
     let lang = AlgLang { matrix };
+    let lang_core = AlgLang {
+        matrix: matrix_core,
+    };
     let (inst, wit) = {
-        let t: P::ScalarField = From::from(1u64);
-        let r_t: P::ScalarField = From::from(2u64);
-        let x: P::ScalarField = From::from(3u64);
-        let r_x: P::ScalarField = From::from(1u64);
+        let t: P::ScalarField = UniformRand::rand(&mut rng);
+        let r_t: P::ScalarField = UniformRand::rand(&mut rng);
+        let x: P::ScalarField = UniformRand::rand(&mut rng);
+        let r_x: P::ScalarField = UniformRand::rand(&mut rng);
+        //let alpha: P::ScalarField = UniformRand::rand(&mut rng);
+        //let r_alpha: P::ScalarField = UniformRand::rand(&mut rng);
+
+        //let t: P::ScalarField = From::from(0u64);
+        //let r_t: P::ScalarField = From::from(0u64);
+        //let x: P::ScalarField = From::from(0u64);
+        //let r_x: P::ScalarField = From::from(0u64);
         let alpha: P::ScalarField = From::from(0u64);
         let r_alpha: P::ScalarField = From::from(0u64);
-        //        let t: P::ScalarField = UniformRand::rand(&mut rng);
-        //        let r_t: P::ScalarField = UniformRand::rand(&mut rng);
-        //        let x: P::ScalarField = UniformRand::rand(&mut rng);
-        //        let r_x: P::ScalarField = UniformRand::rand(&mut rng);
-        //        let alpha: P::ScalarField = UniformRand::rand(&mut rng);
-        //        let r_alpha: P::ScalarField = UniformRand::rand(&mut rng);
+
         let x_minus_t = x - t;
         let alpha_x_minus_t = alpha * (x_minus_t);
         let r_alpha_x_minus_t = r_alpha * (x_minus_t);
@@ -126,8 +147,26 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         (inst, wit)
     };
 
+    let (inst_core, wit_core) = {
+        let mut inst_core = inst.clone();
+        let mut wit_core = wit.clone();
+
+        wit_core.0.remove(8);
+        wit_core.0.remove(7);
+        wit_core.0.remove(5);
+        wit_core.0.remove(4);
+
+        inst_core.0.remove(3 + 2 * d + 1); // TODO double check
+        inst_core.0.remove(2);
+
+        (inst_core, wit_core)
+    };
+
     let lang_valid = lang.contains(&inst, &wit);
     println!("Language valid? {lang_valid:?}");
+
+    let lang_core_valid = lang_core.contains(&inst_core, &wit_core);
+    println!("Language (core) valid? {lang_core_valid:?}");
 
     let trans: CH20Trans<P> = {
         //let u_x: P::ScalarField = UniformRand::rand(&mut rng);
@@ -136,11 +175,11 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         //let u_ralpha: P::ScalarField = UniformRand::rand(&mut rng);
         //let u_rs: Vec<P::ScalarField> = (0..d).map(|_i| UniformRand::rand(&mut rng)).collect();
 
-        let u_x: P::ScalarField = From::from(2u64);
-        let u_rx: P::ScalarField = From::from(3u64);
+        let u_x: P::ScalarField = From::from(0u64);
+        let u_rx: P::ScalarField = From::from(0u64);
         let u_alpha: P::ScalarField = From::from(0u64);
         let u_ralpha: P::ScalarField = From::from(0u64);
-        let u_rs: Vec<P::ScalarField> = (0..d).map(|_i| From::from(1u64)).collect();
+        let u_rs: Vec<P::ScalarField> = (0..d).map(|_i| From::from(0u64)).collect();
 
         let mut t_am: Vec<Vec<P::ScalarField>> = vec![vec![P::ScalarField::zero(); 2 * n]; n];
         let mut t_aa: Vec<P::G1> = vec![P::G1::zero(); n];
@@ -261,13 +300,64 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let mut s: Vec<P::ScalarField> = (0..(lang.wit_size()))
         .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
         .collect();
+
     s[4] = P::ScalarField::zero();
     s[5] = P::ScalarField::zero();
+    s[7] = P::ScalarField::zero();
+    s[8] = P::ScalarField::zero();
+
+    {
+        let matrix1 = lang.instantiate_matrix(&inst.0);
+        let mx_s = ch20::mul_mat_by_vec_g_f(&matrix1, &s);
+
+        let lhs_term1 = ch20::mul_mat_by_vec_f_g(
+            &trans.t_am,
+            &mx_s
+                .into_iter()
+                .chain(inst.0.clone())
+                .collect::<Vec<P::G1>>(),
+        );
+
+        let lhs: Vec<P::G1> = lhs_term1
+            .into_iter()
+            .zip(trans.t_aa.clone())
+            .map(|(x, y)| x + y)
+            .collect();
+
+        let inst2 = trans.update_instance(&inst);
+        let matrix2 = lang.instantiate_matrix(&inst2.0);
+        let s2 = trans.update_witness(&AlgWit(s.clone()));
+
+        let rhs = ch20::mul_mat_by_vec_g_f(&matrix2, &s2.0);
+
+        if rhs != lhs {
+            println!("Not blinding compatible, indices:");
+            for i in 0..rhs.len() {
+                println!(
+                    "  {i:?}: {}",
+                    if lhs[i] != rhs[i] {
+                        " --- NOT EQUAL --- "
+                    } else {
+                        "OK"
+                    }
+                );
+            }
+            {
+                let inst2 = trans.update_instance(&inst);
+                let wit2 = trans.update_witness(&wit);
+            }
+        }
+    }
+    //for i in 0..lang.wit_size() {
+    //    s[i] = P::ScalarField::zero();
+    //}
+    //s[4] = P::ScalarField::zero();
+    //s[5] = P::ScalarField::zero();
     let blinding_compatible = trans.is_blinding_compatible_raw(&lang, &inst, s.clone());
     println!("Transformaion blinding compatible? {blinding_compatible:?}");
     let inst2 = trans.update_instance(&inst);
     let wit2 = trans.update_witness(&wit);
-    println!("Updated instance: {inst2:?}");
+    //println!("Updated instance: {inst2:?}");
     println!("Updated witness: {wit2:?}");
     let blinding_compatible2 = trans.is_blinding_compatible_raw(&lang, &inst2, s);
     println!(":#? {:#?}", inst2);
@@ -275,12 +365,12 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let lang_valid_2 = lang.contains(&inst2, &wit2);
     println!("Transformed language valid? {lang_valid_2:?}");
 
-    let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
-    let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang, &inst, &wit);
-    let res = proof.verify(&crs, &lang, &inst);
-    println!("Verification result: {:?}", res);
+    //let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
+    //let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang, &inst, &wit);
+    //let res = proof.verify(&crs, &lang, &inst);
+    //println!("Verification result: {:?}", res);
 
-    let proof2 = proof.update(&crs, &lang, &inst, &trans);
-    let res2 = proof2.verify(&crs, &lang, &inst2);
-    println!("Transformed proof valid?: {:?}", res2);
+    //let proof2 = proof.update(&crs, &lang, &inst, &trans);
+    //let res2 = proof2.verify(&crs, &lang, &inst2);
+    //println!("Transformed proof valid?: {:?}", res2);
 }

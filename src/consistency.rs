@@ -297,8 +297,8 @@ pub fn consistency_trans<G: Group, RNG: RngCore>(
     for i in 0..d - 1 {
         for j in 0..(i + 1) {
             t_am[5 + 2 * d + i][5 + 2 * d + j] = v_coeff(i + 1, j + 1, u_x);
-            t_am[5 + 2 * d + i][n + 3 + j] = v_coeff(i + 1, j + 1, u_x) * u_x;
-            t_am[5 + 2 * d + i][3 + j] = -v_coeff(i + 1, j + 1, u_x) * u_x;
+            t_am[5 + 2 * d + i][n + 3 + 2 * j] = v_coeff(i + 1, j + 1, u_x) * u_x;
+            t_am[5 + 2 * d + i][3 + 2 * j] = -v_coeff(i + 1, j + 1, u_x) * u_x;
         }
     }
 
@@ -419,7 +419,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         s[7] = P::ScalarField::zero();
         s[8] = P::ScalarField::zero();
 
-        let blinding_compatible = trans.is_blinding_compatible_raw(&lang, &inst, s);
+        let blinding_compatible = trans.is_blinding_compatible_raw(&lang, &inst, s.clone());
         println!("Transformaion blinding compatible? {blinding_compatible:?}");
     }
 
@@ -470,14 +470,15 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let blinding_compatible = trans_core.is_blinding_compatible(&lang_core, &inst_core);
     println!("Transformaion (core) blinding compatible? {blinding_compatible:?}");
 
+    let inst_core2 = trans_core.update_instance(&inst_core);
+    let wit_core2 = trans_core.update_witness(&wit_core);
+    let blinding_compatible2 = trans_core.is_blinding_compatible(&lang_core, &inst_core2);
+    println!("Transformaion (core) blinding compatible wrt new inst? {blinding_compatible2:?}");
+    let lang_valid_2 = lang_core.contains(&inst_core2, &wit_core2);
+    println!("Transformed language valid? {lang_valid_2:?}");
+
     //    let blinding_compatible = trans.is_blinding_compatible_raw(&lang, &inst, s.clone());
     //    println!("Transformaion blinding compatible? {blinding_compatible:?}");
-    //    let inst2 = trans.update_instance(&inst);
-    //    let wit2 = trans.update_witness(&wit);
-    //    let blinding_compatible2 = trans.is_blinding_compatible_raw(&lang, &inst2, s);
-    //    println!("Transformaion blinding compatible wrt new inst? {blinding_compatible2:?}");
-    //    let lang_valid_2 = lang.contains(&inst2, &wit2);
-    //    println!("Transformed language valid? {lang_valid_2:?}");
 
     //let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
     //let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang_core, &inst_core, &wit_core);

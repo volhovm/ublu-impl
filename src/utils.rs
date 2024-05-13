@@ -49,6 +49,8 @@ pub(crate) mod tests {
         assert!(binomial(1, 1) == 1);
         assert!(binomial(2, 1) == 2);
         assert!(binomial(3, 1) == 3);
+        assert!(binomial(3, 2) == 3);
+        assert!(binomial(3, 3) == 1);
         assert!(binomial(9, 2) == 36);
         assert!(binomial(4, 3) == 4);
         assert!(binomial(5, 4) == 5);

@@ -34,7 +34,7 @@ pub struct TagProof<P: Pairing> {
     _phantom: std::marker::PhantomData<P>,
 }
 impl<P: Pairing> From<CH20Proof<P>> for TagProof<P> {
-    fn from(value: CH20Proof<P>) -> Self {
+    fn from(_value: CH20Proof<P>) -> Self {
         todo!()
     }
 }
@@ -138,13 +138,13 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         &mut self,
         pk: &PublicKey<P>,
         hint: &Hint<P>,
-        old_tag: Option<&Tag<P>>,
+        _old_tag: Option<&Tag<P>>,
         x: u32,
         rnd: &P::ScalarField,
     ) -> (Hint<P>, Tag<P>) {
         let r_x = P::ScalarField::rand(&mut self.rng);
         let new_hint = self.update_hint(pk, hint, x, &r_x);
-        let cur_com = self.pedersen.commit_raw(&P::ScalarField::from(x), rnd);
+        let _cur_com = self.pedersen.commit_raw(&P::ScalarField::from(x), rnd);
         // TODO do the proofs
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
         let proof_t = CH20Proof {
@@ -158,9 +158,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         (new_hint, new_tag)
     }
 
+    #[allow(unused_assignments)]
     fn update_hint(
         &mut self,
-        pk: &PublicKey<P>,
+        _pk: &PublicKey<P>,
         old_hint: &Hint<P>,
         x: u32,
         r_x: &P::ScalarField,
@@ -171,15 +172,15 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
         let mut new_com = self.pedersen.commit_raw(&P::ScalarField::from(x), r_x).com;
         new_com = new_com + old_hint.com_x.clone();
-        let new_ciphers = self.update_powers(old_hint.ciphers.clone(), r_i_list, x);
+        let _new_ciphers = self.update_powers(old_hint.ciphers.clone(), r_i_list, x);
         todo!()
     }
 
     fn update_powers(
         &mut self,
-        old_ciphers: Vec<Cipher<P::G1>>,
-        r_i_list: Vec<P::ScalarField>,
-        x: u32,
+        _old_ciphers: Vec<Cipher<P::G1>>,
+        _r_i_list: Vec<P::ScalarField>,
+        _x: u32,
     ) -> Vec<Cipher<P::G1>> {
         todo!()
     }

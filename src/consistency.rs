@@ -181,26 +181,18 @@ pub fn consistency_core_gen_inst_wit<G: Group, RNG: RngCore>(
     (inst_core, wit_core)
 }
 
-pub fn consistency_trans<G: Group, RNG: RngCore>(
+pub fn consistency_trans<G: Group>(
     g: G,
     hs: &[G],
     d: usize,
-    rng: &mut RNG,
+    u_x: G::ScalarField,
+    u_rx: G::ScalarField,
+    u_rs: Vec<G::ScalarField>,
+    u_alpha: G::ScalarField,
+    u_ralpha: G::ScalarField,
 ) -> CH20Trans<G> {
     let n = 3 * d + 4;
     let m = 2 * d + 8;
-
-    let u_x: G::ScalarField = UniformRand::rand(rng);
-    let u_rx: G::ScalarField = UniformRand::rand(rng);
-    let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
-    //let u_x: G::ScalarField = From::from(0u64);
-    //let u_rx: G::ScalarField = From::from(0u64);
-    //let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| From::from(0u64)).collect();
-
-    let u_alpha: G::ScalarField = From::from(0u64);
-    let u_ralpha: G::ScalarField = From::from(0u64);
-    //let u_alpha: G::ScalarField = UniformRand::rand(rng);
-    //let u_ralpha: G::ScalarField = UniformRand::rand(rng);
 
     let mut t_am: Vec<Vec<G::ScalarField>> = vec![vec![G::ScalarField::zero(); 2 * n]; n];
     let mut t_aa: Vec<G> = vec![G::zero(); n];
@@ -316,16 +308,34 @@ pub fn consistency_trans<G: Group, RNG: RngCore>(
     }
 }
 
-pub fn consistency_core_trans<G: Group, RNG: RngCore>(
+pub fn consistency_trans_rand<G: Group, RNG: RngCore>(
     g: G,
     hs: &[G],
     d: usize,
     rng: &mut RNG,
 ) -> CH20Trans<G> {
+    let u_x: G::ScalarField = UniformRand::rand(rng);
+    let u_rx: G::ScalarField = UniformRand::rand(rng);
+    let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
+    let u_alpha: G::ScalarField = From::from(0u64);
+    let u_ralpha: G::ScalarField = From::from(0u64);
+    consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha)
+}
+
+pub fn consistency_core_trans<G: Group>(
+    g: G,
+    hs: &[G],
+    d: usize,
+    u_x: G::ScalarField,
+    u_rx: G::ScalarField,
+    u_rs: Vec<G::ScalarField>,
+) -> CH20Trans<G> {
     let n = 3 * d + 4;
     let m = 2 * d + 8;
 
-    let mut t = consistency_trans(g, hs, d, rng);
+    let u_alpha: G::ScalarField = From::from(0u64);
+    let u_ralpha: G::ScalarField = From::from(0u64);
+    let mut t = consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha);
 
     for i in 0..m {
         t.t_wm[i].remove(8);
@@ -370,6 +380,18 @@ pub fn consistency_core_trans<G: Group, RNG: RngCore>(
     t
 }
 
+pub fn consistency_core_trans_rand<G: Group, RNG: RngCore>(
+    g: G,
+    hs: &[G],
+    d: usize,
+    rng: &mut RNG,
+) -> CH20Trans<G> {
+    let u_x: G::ScalarField = UniformRand::rand(rng);
+    let u_rx: G::ScalarField = UniformRand::rand(rng);
+    let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
+    consistency_core_trans(g, hs, d, u_x, u_rx, u_rs)
+}
+
 pub fn test_ublu_lang_consistency<P: Pairing>() {
     let mut rng = thread_rng();
     let g: P::G1 = UniformRand::rand(&mut rng);
@@ -391,7 +413,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let lang_core_valid = lang_core.contains(&inst_core, &wit_core);
     println!("Language (core) valid? {lang_core_valid:?}");
 
-    let trans_core: CH20Trans<P::G1> = consistency_core_trans(g, &hs, d, &mut rng);
+    let trans_core: CH20Trans<P::G1> = consistency_core_trans_rand(g, &hs, d, &mut rng);
 
     // "Base" language is consistent but only if we blind some randomness in s
     {
@@ -400,7 +422,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
 
-        let trans: CH20Trans<P::G1> = consistency_trans(g, &hs, d, &mut rng);
+        let trans: CH20Trans<P::G1> = consistency_trans_rand(g, &hs, d, &mut rng);
         let mut s: Vec<P::ScalarField> = (0..(lang.wit_size()))
             .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
             .collect();

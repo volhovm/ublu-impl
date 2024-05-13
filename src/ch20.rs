@@ -76,7 +76,9 @@ impl<G: Group> AlgLang<G> {
     pub fn contains(&self, inst: &AlgInst<G>, wit: &AlgWit<G>) -> bool {
         let matrix = self.instantiate_matrix(&inst.0);
         let inst2 = mul_mat_by_vec_g_f(&matrix, &wit.0);
-        inst2 == inst.0
+        // we only compare the first inst_size elements of the instance,
+        // the rest of the instance may be only needed for instantiate_matrix
+        inst2 == inst.0[0..self.inst_size()]
     }
 }
 

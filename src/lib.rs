@@ -7,6 +7,7 @@ pub mod consistency;
 pub mod elgamal;
 pub mod ublu;
 pub mod utils;
+pub mod sigma;
 
 /// Concrete curve
 pub type CC = Bls12_381;

@@ -220,4 +220,45 @@ pub(crate) mod tests {
         println!("Language valid? {lang_valid:?}");
         assert!(lang_valid);
     }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn test_keylang() {
+        let mut rng = thread_rng();
+        let G: CG1 = UniformRand::rand(&mut rng);
+        let Hcom: CG1 = UniformRand::rand(&mut rng);
+
+        let sk: CF = UniformRand::rand(&mut rng);
+        let t: CF = UniformRand::rand(&mut rng);
+        let r01: CF = UniformRand::rand(&mut rng);
+        let rt: CF = UniformRand::rand(&mut rng);
+
+        let H: CG1 = G * sk;
+        let B01: CG1 = G * t + H * r01;
+        let T: CG1 = G * t + Hcom * rt;
+
+
+        let il = 3;
+        let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
+            vec![LinearPoly::constant(il, G), LinearPoly::zero(il), LinearPoly::zero(il),LinearPoly::zero(il)],
+            vec![LinearPoly::zero(il), LinearPoly::constant(il, G), LinearPoly::single(il, 0),LinearPoly::zero(il)],
+            vec![LinearPoly::zero(il), LinearPoly::constant(il, G),LinearPoly::zero(il), LinearPoly::constant(il, Hcom)],
+        ];
+
+        let lang: AlgLang<CG1> = AlgLang { matrix };
+        let inst: AlgInst<CG1> = AlgInst(vec![H, B01, T]); //
+        let wit: AlgWit<CG1> = AlgWit(vec![sk, t, r01, rt]);
+
+        let lang_valid = lang.contains(&inst, &wit);
+        println!("Language valid? {lang_valid:?}");
+        assert!(lang_valid);
+
+        let proof = SigmaProof::prove(&lang, &inst, &wit);
+
+        println!("proof {:?}", proof);
+
+        let ver = proof.verify(&lang, &inst);
+        println!("proof is {:?}", ver);
+        assert!(ver.is_ok());
+    }
 }

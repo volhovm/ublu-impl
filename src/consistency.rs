@@ -293,7 +293,6 @@ pub fn consistency_trans<G: Group, RNG: RngCore>(
 
     t_am[4 + 2 * d][4 + 2 * d] = G::ScalarField::zero();
 
-    // TODO check, seems broken
     for i in 0..d - 1 {
         for j in 0..(i + 1) {
             t_am[5 + 2 * d + i][5 + 2 * d + j] = v_coeff(i + 1, j + 1, u_x);
@@ -381,10 +380,6 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let g: P::G1 = UniformRand::rand(&mut rng);
 
     let d = 3;
-    // Number of instance elements
-    let n = 3 * d + 4;
-    // Number of witness elements
-    let m = 2 * d + 8;
 
     let hs: Vec<_> = (0..d + 2)
         .map(|_i| <P::G1 as UniformRand>::rand(&mut rng))
@@ -403,6 +398,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
 
     let trans_core: CH20Trans<P::G1> = consistency_core_trans(g, &hs, d, &mut rng);
 
+    // "Base" language is consistent but only if we blind some randomness in s
     {
         let lang = consistency_lang(g, &hs, d);
         let (inst, wit) = consistency_gen_inst_wit(g, &hs, d, &mut rng);
@@ -423,50 +419,6 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         println!("Transformaion blinding compatible? {blinding_compatible:?}");
     }
 
-    //{
-    //    let matrix1 = lang.instantiate_matrix(&inst.0);
-    //    let mx_s = ch20::mul_mat_by_vec_g_f(&matrix1, &s);
-
-    //    let lhs_term1 = ch20::mul_mat_by_vec_f_g(
-    //        &trans.t_am,
-    //        &mx_s
-    //            .into_iter()
-    //            .chain(inst.0.clone())
-    //            .collect::<Vec<P::G1>>(),
-    //    );
-
-    //    let lhs: Vec<P::G1> = lhs_term1
-    //        .into_iter()
-    //        .zip(trans.t_aa.clone())
-    //        .map(|(x, y)| x + y)
-    //        .collect();
-
-    //    let inst2 = trans.update_instance(&inst);
-    //    let matrix2 = lang.instantiate_matrix(&inst2.0);
-    //    let s2 = trans.update_witness(&AlgWit(s.clone()));
-
-    //    let rhs = ch20::mul_mat_by_vec_g_f(&matrix2, &s2.0);
-
-    //    if rhs != lhs {
-    //        println!("Not blinding compatible, indices:");
-    //        for i in 0..rhs.len() {
-    //            println!(
-    //                "  {i:?}: {}",
-    //                if lhs[i] != rhs[i] {
-    //                    " --- NOT EQUAL --- "
-    //                } else {
-    //                    "OK"
-    //                }
-    //            );
-    //        }
-    //        {
-    //            let inst2 = trans.update_instance(&inst);
-    //            let wit2 = trans.update_witness(&wit);
-    //        }
-    //    }
-    //}
-
-    println!("inst_core params: n={:?}", inst_core.0.len());
     let blinding_compatible = trans_core.is_blinding_compatible(&lang_core, &inst_core);
     println!("Transformaion (core) blinding compatible? {blinding_compatible:?}");
 
@@ -480,12 +432,12 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     //    let blinding_compatible = trans.is_blinding_compatible_raw(&lang, &inst, s.clone());
     //    println!("Transformaion blinding compatible? {blinding_compatible:?}");
 
-    //let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
-    //let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang_core, &inst_core, &wit_core);
-    //let res = proof.verify(&crs, &lang_core, &inst_core);
-    //println!("Verification result: {:?}", res);
+    let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
+    let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang_core, &inst_core, &wit_core);
+    let res = proof.verify(&crs, &lang_core, &inst_core);
+    println!("Verification result: {:?}", res);
 
-    //let proof2 = proof.update(&crs, &lang_core, &inst_core, &trans);
-    //let res2 = proof2.verify(&crs, &lang_core, &inst2);
-    //println!("Transformed proof valid?: {:?}", res2);
+    let proof2 = proof.update(&crs, &lang_core, &inst_core, &trans_core);
+    let res2 = proof2.verify(&crs, &lang_core, &inst_core2);
+    println!("Transformed proof valid?: {:?}", res2);
 }

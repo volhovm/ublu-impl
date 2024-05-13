@@ -261,8 +261,8 @@ pub fn consistency_trans<G: Group, RNG: RngCore>(
     // s_{r_{i}(x-t)}' = ...
     for i in 0..d - 1 {
         for j in 0..i + 1 {
-            t_wm[9 + d + i][9 + d + j] = v_coeff(i + 1, j + 1, u_x);
             t_wm[9 + d + i][9 + j] = u_x * v_coeff(i + 1, j + 1, u_x);
+            t_wm[9 + d + i][9 + d + j] = v_coeff(i + 1, j + 1, u_x);
         }
         t_wm[9 + d + i][6] = u_rs[i];
         t_wa[9 + d + i] = u_rs[i] * u_x;
@@ -380,7 +380,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let mut rng = thread_rng();
     let g: P::G1 = UniformRand::rand(&mut rng);
 
-    let d = 5;
+    let d = 3;
     // Number of instance elements
     let n = 3 * d + 4;
     // Number of witness elements

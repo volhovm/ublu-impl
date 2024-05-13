@@ -432,7 +432,7 @@ pub fn generalise_inst<G: Group>(d: usize, inst: AlgInst<G>) -> AlgInst<G> {
     inst
 }
 
-pub fn test_ublu_lang_consistency<P: Pairing>() {
+pub fn check_ublu_lang_consistency<P: Pairing>() {
     let mut rng = thread_rng();
     let g: P::G1 = UniformRand::rand(&mut rng);
 
@@ -470,27 +470,33 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
 
     let lang_core_valid = lang_core.contains(&inst_core, &wit_core);
     println!("Language (core) valid? {lang_core_valid:?}");
+    assert!(lang_core_valid);
 
     let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
     let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang_core, &inst_core, &wit_core);
     let res = proof.verify(&crs, &lang_core, &inst_core);
     println!("Verification result: {:?}", res);
+    assert!(res.is_ok());
 
     // Update it with some x values (but not α)
 
     let trans_core: CH20Trans<P::G1> = consistency_core_trans_rand(g, &hs, d, &mut rng);
     let blinding_compatible = trans_core.is_blinding_compatible(&lang_core, &inst_core);
     println!("Transformaion (core) blinding compatible? {blinding_compatible:?}");
+    assert!(blinding_compatible);
     let inst_core2 = trans_core.update_instance(&inst_core);
     let wit_core2 = trans_core.update_witness(&wit_core);
     let blinding_compatible2 = trans_core.is_blinding_compatible(&lang_core, &inst_core2);
     println!("Transformaion (core) blinding compatible wrt new inst? {blinding_compatible2:?}");
-    let lang_valid_2 = lang_core.contains(&inst_core2, &wit_core2);
-    println!("Transformed language valid? {lang_valid_2:?}");
+    assert!(blinding_compatible2);
+    let lang_valid2 = lang_core.contains(&inst_core2, &wit_core2);
+    println!("Transformed language valid? {lang_valid2:?}");
+    assert!(lang_valid2);
 
     let proof2 = proof.update(&crs, &lang_core, &inst_core, &trans_core);
     let res2 = proof2.verify(&crs, &lang_core, &inst_core2);
     println!("Transformed proof valid?: {:?}", res2);
+    assert!(res2.is_ok());
 
     // Blind with α, r_α, {r_i} (but not x!)
 
@@ -499,6 +505,7 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     let inst_gen = generalise_inst(d, inst_core2);
     let res_gen = proof_gen.verify(&crs, &lang_gen, &inst_gen);
     println!("Transformed generalised proof valid?: {:?}", res_gen);
+    assert!(res_gen.is_ok());
 
     let trans_blind: CH20Trans<P::G1> = consistency_blind_trans_rand(g, &hs, d, &mut rng);
     let proof_blinded = proof_gen.update(&crs, &lang_gen, &inst_gen, &trans_blind);
@@ -509,13 +516,26 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
         "Transformed generalised blinded proof valid?: {:?}",
         res_blinded
     );
+    assert!(res_blinded.is_ok());
 
     let mut proof_blinded_broken = proof_blinded.clone();
     proof_blinded_broken.d[3] = P::G2::zero();
+    let res_blinded_broken = proof_blinded_broken.verify(&crs, &lang_gen, &inst_blinded);
+
     println!(
         "Transformed malicious generalised blinded proof fails?: {:?}",
-        !proof_blinded_broken
-            .verify(&crs, &lang_gen, &inst_blinded)
-            .is_ok()
+        res_blinded_broken.is_err()
     );
+    assert!(res_blinded_broken.is_err());
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::CC;
+
+    #[test]
+    fn test_ublu_lang_consistency() {
+        check_ublu_lang_consistency::<CC>();
+    }
 }

@@ -8,8 +8,8 @@ use rand::{thread_rng, RngCore};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LinearPoly<G: Group> {
-    poly_coeffs: Vec<G::ScalarField>,
-    poly_const: G,
+    pub poly_coeffs: Vec<G::ScalarField>,
+    pub poly_const: G,
 }
 
 impl<G: Group> LinearPoly<G> {
@@ -95,6 +95,13 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
 pub fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> Vec<G> {
     let n = mat.len();
     let m = mat[0].len();
+    assert!(
+        vec.len() == m,
+        "Cannot multiply {}x{} matrix by a {} vector",
+        n,
+        m,
+        vec.len()
+    );
     let mut res: Vec<G> = vec![Zero::zero(); n];
     for i in 0..n {
         for j in 0..m {
@@ -179,7 +186,7 @@ impl<P: Pairing> CH20Proof<P> {
         let mut lhs: Vec<Vec<P::G1>> = vec![vec![]; lang.inst_size()];
         let mut rhs: Vec<Vec<P::G2>> = vec![vec![]; lang.inst_size()];
         let mat = lang.instantiate_matrix(&inst.0);
-        println!("{mat:?}");
+        //println!("{mat:?}");
         for i in 0..lang.inst_size() {
             for j in 0..lang.wit_size() {
                 lhs[i].push(mat[i][j]);
@@ -208,7 +215,7 @@ impl<P: Pairing> CH20Proof<P> {
         crs: &CH20CRS<P>,
         lang: &AlgLang<P::G1>,
         inst: &AlgInst<P::G1>,
-        trans: &CH20Trans<P>,
+        trans: &CH20Trans<P::G1>,
     ) -> CH20Proof<P> {
         let mut rng = thread_rng();
         let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
@@ -261,38 +268,38 @@ impl<P: Pairing> CH20Proof<P> {
     }
 }
 
-pub struct CH20Trans<P: Pairing> {
-    pub t_am: Vec<Vec<P::ScalarField>>,
-    pub t_aa: Vec<P::G1>,
-    pub t_xm: Vec<Vec<P::ScalarField>>,
-    pub t_xa: Vec<P::G1>,
-    pub t_wm: Vec<Vec<P::ScalarField>>,
-    pub t_wa: Vec<P::ScalarField>,
+pub struct CH20Trans<G: Group> {
+    pub t_am: Vec<Vec<G::ScalarField>>,
+    pub t_aa: Vec<G>,
+    pub t_xm: Vec<Vec<G::ScalarField>>,
+    pub t_xa: Vec<G>,
+    pub t_wm: Vec<Vec<G::ScalarField>>,
+    pub t_wa: Vec<G::ScalarField>,
 }
 
-impl<P: Pairing> CH20Trans<P> {
+impl<G: Group> CH20Trans<G> {
     /// Creates a zero (ID) transformation for a given language.
-    pub fn zero_trans(lang: &AlgLang<P::G1>) -> CH20Trans<P> {
-        let mut t_xm: Vec<Vec<P::ScalarField>> =
-            vec![vec![P::ScalarField::zero(); lang.inst_size()]; lang.inst_size()];
+    pub fn zero_trans(lang: &AlgLang<G>) -> CH20Trans<G> {
+        let mut t_xm: Vec<Vec<G::ScalarField>> =
+            vec![vec![G::ScalarField::zero(); lang.inst_size()]; lang.inst_size()];
         for i in 0..lang.inst_size() {
-            t_xm[i][i] = P::ScalarField::one();
+            t_xm[i][i] = G::ScalarField::one();
         }
-        let mut t_wm: Vec<Vec<P::ScalarField>> =
-            vec![vec![P::ScalarField::zero(); lang.wit_size()]; lang.wit_size()];
+        let mut t_wm: Vec<Vec<G::ScalarField>> =
+            vec![vec![G::ScalarField::zero(); lang.wit_size()]; lang.wit_size()];
         for i in 0..lang.wit_size() {
-            t_wm[i][i] = P::ScalarField::one();
+            t_wm[i][i] = G::ScalarField::one();
         }
 
-        let t_xa: Vec<P::G1> = vec![P::G1::zero(); lang.inst_size()];
-        let t_wa: Vec<P::ScalarField> = vec![P::ScalarField::zero(); lang.wit_size()];
+        let t_xa: Vec<G> = vec![G::zero(); lang.inst_size()];
+        let t_wa: Vec<G::ScalarField> = vec![G::ScalarField::zero(); lang.wit_size()];
 
-        let t_am: Vec<Vec<P::ScalarField>> = t_xm
+        let t_am: Vec<Vec<G::ScalarField>> = t_xm
             .clone()
             .into_iter()
             .map(|row| {
                 row.into_iter()
-                    .chain(vec![P::ScalarField::zero(); lang.inst_size()])
+                    .chain(vec![G::ScalarField::zero(); lang.inst_size()])
                     .collect()
             })
             .collect();
@@ -308,11 +315,11 @@ impl<P: Pairing> CH20Trans<P> {
         }
     }
 
-    pub fn update_instance(&self, inst: &AlgInst<P::G1>) -> AlgInst<P::G1> {
-        let inst_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(&self.t_xm, &inst.0);
-        let inst_prime_e2: Vec<P::G1> = self.t_xa.clone();
+    pub fn update_instance(&self, inst: &AlgInst<G>) -> AlgInst<G> {
+        let inst_prime_e1: Vec<G> = mul_mat_by_vec_f_g(&self.t_xm, &inst.0);
+        let inst_prime_e2: Vec<G> = self.t_xa.clone();
 
-        let inst_prime: Vec<P::G1> = inst_prime_e1
+        let inst_prime: Vec<G> = inst_prime_e1
             .into_iter()
             .zip(inst_prime_e2)
             .map(|(x, y)| x + y)
@@ -321,11 +328,11 @@ impl<P: Pairing> CH20Trans<P> {
         AlgInst(inst_prime)
     }
 
-    pub fn update_witness(&self, wit: &AlgWit<P::G1>) -> AlgWit<P::G1> {
-        let wit_prime_e1: Vec<P::ScalarField> = mul_mat_by_vec_f_f::<P::G1>(&self.t_wm, &wit.0);
-        let wit_prime_e2: Vec<P::ScalarField> = self.t_wa.clone();
+    pub fn update_witness(&self, wit: &AlgWit<G>) -> AlgWit<G> {
+        let wit_prime_e1: Vec<G::ScalarField> = mul_mat_by_vec_f_f::<G>(&self.t_wm, &wit.0);
+        let wit_prime_e2: Vec<G::ScalarField> = self.t_wa.clone();
 
-        let wit_prime: Vec<P::ScalarField> = wit_prime_e1
+        let wit_prime: Vec<G::ScalarField> = wit_prime_e1
             .into_iter()
             .zip(wit_prime_e2)
             .map(|(x, y)| x + y)
@@ -339,22 +346,19 @@ impl<P: Pairing> CH20Trans<P> {
     /// language is blinding compatible with some probability.
     pub fn is_blinding_compatible_raw(
         &self,
-        lang: &AlgLang<P::G1>,
-        inst: &AlgInst<P::G1>,
-        s: Vec<P::ScalarField>,
+        lang: &AlgLang<G>,
+        inst: &AlgInst<G>,
+        s: Vec<G::ScalarField>,
     ) -> bool {
         let matrix1 = lang.instantiate_matrix(&inst.0);
         let mx_s = mul_mat_by_vec_g_f(&matrix1, &s);
 
         let lhs_term1 = mul_mat_by_vec_f_g(
             &self.t_am,
-            &mx_s
-                .into_iter()
-                .chain(inst.0.clone())
-                .collect::<Vec<P::G1>>(),
+            &mx_s.into_iter().chain(inst.0.clone()).collect::<Vec<G>>(),
         );
 
-        let lhs: Vec<P::G1> = lhs_term1
+        let lhs: Vec<G> = lhs_term1
             .into_iter()
             .zip(self.t_aa.clone())
             .map(|(x, y)| x + y)
@@ -386,10 +390,10 @@ impl<P: Pairing> CH20Trans<P> {
     /// Does a probabilistic check that the transformation is blinding
     /// compatible. If returns false, it's not. If returns true, the
     /// language is blinding compatible with some probability.
-    pub fn is_blinding_compatible(&self, lang: &AlgLang<P::G1>, inst: &AlgInst<P::G1>) -> bool {
+    pub fn is_blinding_compatible(&self, lang: &AlgLang<G>, inst: &AlgInst<G>) -> bool {
         let mut rng = thread_rng();
-        let s: Vec<P::ScalarField> = (0..(lang.wit_size()))
-            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+        let s: Vec<G::ScalarField> = (0..(lang.wit_size()))
+            .map(|_i| <G::ScalarField as UniformRand>::rand(&mut rng))
             .collect();
 
         self.is_blinding_compatible_raw(lang, inst, s)
@@ -432,7 +436,7 @@ pub(crate) mod tests {
         let res = proof.verify(&crs, &lang, &inst);
         println!("Verification result: {:?}", res);
 
-        let trans: CH20Trans<CC> = {
+        let trans: CH20Trans<CG1> = {
             let delta: CF = UniformRand::rand(&mut rng);
             let gamma: CF = UniformRand::rand(&mut rng);
             let t_xm: Vec<Vec<CF>> = vec![

@@ -5,7 +5,7 @@ use ark_std::UniformRand;
 use rand::{thread_rng, RngCore};
 
 use crate::{
-    ch20::{self, AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, LinearPoly, CH20CRS},
+    ch20::{AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, LinearPoly, CH20CRS},
     utils::{binomial, field_pow},
 };
 
@@ -93,11 +93,6 @@ pub fn consistency_gen_inst_wit<G: Group, RNG: RngCore>(
     d: usize,
     rng: &mut RNG,
 ) -> (AlgInst<G>, AlgWit<G>) {
-    // Number of instance elements
-    let n = 3 * d + 4;
-    // Number of witness elements
-    let m = 2 * d + 8;
-
     let t: G::ScalarField = UniformRand::rand(rng);
     let r_t: G::ScalarField = UniformRand::rand(rng);
     let x: G::ScalarField = UniformRand::rand(rng);
@@ -428,9 +423,6 @@ pub fn test_ublu_lang_consistency<P: Pairing>() {
     println!("Transformaion (core) blinding compatible wrt new inst? {blinding_compatible2:?}");
     let lang_valid_2 = lang_core.contains(&inst_core2, &wit_core2);
     println!("Transformed language valid? {lang_valid_2:?}");
-
-    //    let blinding_compatible = trans.is_blinding_compatible_raw(&lang, &inst, s.clone());
-    //    println!("Transformaion blinding compatible? {blinding_compatible:?}");
 
     let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
     let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang_core, &inst_core, &wit_core);

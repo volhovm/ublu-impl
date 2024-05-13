@@ -2,6 +2,7 @@ use ark_ec::{Group};
 use ark_std::UniformRand;
 use ark_transcript::Transcript;
 use rand::{thread_rng};
+use ark_ff::{Zero};
 use crate::ch20::{AlgInst, AlgLang, AlgWit, mul_mat_by_vec_g_f};
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
@@ -190,29 +191,33 @@ pub(crate) mod tests {
         let ra: CF = UniformRand::rand(&mut rng);
         let b: CF = UniformRand::rand(&mut rng);
         let rb: CF = UniformRand::rand(&mut rng);
-        let ba: CF = UniformRand::rand(&mut rng);
-        let rba: CF = UniformRand::rand(&mut rng);
+
+        let ba: CF = b*a;
+        let rba: CF = rb*a;
 
         let U: CG1 = G * a + H * ra;
         let B: CG1 = G * b + H * rb;
         let E1: CG1 = PA * b;
         let E2: CG1 = PD * b + PW * ba;
 
-        let il = 6;
+        let il = 8;
         let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
             vec![LinearPoly::constant(il, G), LinearPoly::constant(il, H), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il)],
-            vec![LinearPoly::single(il, 2), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::constant(il, -G), LinearPoly::constant(il, -H),],
-            //vec![LinearPoly::constant(il, G), LinearPoly::zero(il), LinearPoly::constant(il, H)],
+            vec![LinearPoly::zero(il), LinearPoly::zero(il),LinearPoly::constant(il, G), LinearPoly::constant(il, H), LinearPoly::zero(il), LinearPoly::zero(il)],
+            vec![LinearPoly::single(il, 1), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::constant(il, -G), LinearPoly::constant(il, -H),],
+
+            vec![LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::single(il, 5), LinearPoly::zero(il),LinearPoly::zero(il),LinearPoly::zero(il)],
+            vec![LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::single(il, 6), LinearPoly::zero(il),LinearPoly::single(il, 7),LinearPoly::zero(il)],
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![U,G,B]); //
+        let inst: AlgInst<CG1> = AlgInst(vec![U,B,G*CF::zero(),E1,E2, PA, PD, PW]);
         let wit: AlgWit<CG1> = AlgWit(vec![a,ra,b,rb,ba,rba]);
 
         println!("inst {:?}", lang.instantiate_matrix(&inst.0));
 
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
-        //assert!(lang_valid);
+        assert!(lang_valid);
     }
 }

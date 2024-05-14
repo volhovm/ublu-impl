@@ -8,7 +8,7 @@ use rand::RngCore;
 
 use crate::{
     ch20::{CH20Proof, CH20CRS},
-    commitment::{InnerCom, PedersenParams},
+    commitment::{Comm, PedersenParams},
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
 };
 
@@ -44,7 +44,7 @@ impl<P: Pairing> From<CH20Proof<P>> for TagProof<P> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicKey<P: Pairing> {
     h: P::G1,
-    com_t: InnerCom<P::G1>,
+    com_t: Comm<P::G1>,
     proof_pk: PkProof<P>,
 }
 
@@ -56,14 +56,27 @@ pub struct SecretKey<P: Pairing> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Hint<P: Pairing> {
     ciphers: Vec<Cipher<P::G1>>,
-    com_x: InnerCom<P::G1>,
+    com_x: Comm<P::G1>,
     proof_c: CH20Proof<P>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tag<P: Pairing> {
     proof: TagProof<P>,
-    com: InnerCom<P::G1>,
+    com: Comm<P::G1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Escrow<P: Pairing> {
+    /// (E1, E2)
+    escrow_enc: Cipher<P::G1>,
+    /// {A_i,D_i}
+    blinded_ciphers: Vec<Cipher<P::G1>>,
+    com_x: Comm<P::G1>,
+    com_alpha: Comm<P::G1>,
+    com_beta: Comm<P::G1>,
+    proof_c: CH20Proof<P>,
+    proof_e: CH20Proof<P>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -179,6 +192,54 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         _r_i_list: Vec<P::ScalarField>,
         _x: u32,
     ) -> Vec<Cipher<P::G1>> {
+        todo!()
+    }
+
+    fn blind_powers(
+        &self,
+        _old_ciphers: &[Cipher<P::G1>],
+        _alpha: P::ScalarField,
+    ) -> Vec<Cipher<P::G1>> {
+        todo!()
+    }
+
+    pub fn escrow(&mut self, pk: &PublicKey<P>, hint: &Hint<P>) -> Escrow<P> {
+        let alpha = P::ScalarField::rand(&mut self.rng);
+        let r_alpha = P::ScalarField::rand(&mut self.rng);
+        let beta = P::ScalarField::rand(&mut self.rng);
+        let r_beta = P::ScalarField::rand(&mut self.rng);
+
+        let com_alpha = self.pedersen.commit_raw(&alpha, &r_alpha).com;
+        let com_beta = self.pedersen.commit_raw(&beta, &r_beta).com;
+
+        let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
+        let escrow_enc = self.evaluate(&hint.ciphers, beta);
+
+        let proof_c = {
+            let todo = || unimplemented!();
+            todo()
+        };
+        let proof_e = {
+            let todo = || unimplemented!();
+            todo()
+        };
+
+        Escrow {
+            escrow_enc,
+            blinded_ciphers,
+            com_x: hint.com_x.clone(),
+            com_alpha,
+            com_beta,
+            proof_c,
+            proof_e,
+        }
+    }
+
+    pub fn decrypt(&self, sk: &SecretKey<P>, escrow: &Escrow<P>) -> bool {
+        todo!()
+    }
+
+    fn evaluate(&self, _old_ciphers: &[Cipher<P::G1>], _beta: P::ScalarField) -> Cipher<P::G1> {
         todo!()
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)]
 #![allow(unused_assignments)]
 #![allow(unused_variables)]
 #![allow(dead_code)]
@@ -10,6 +11,7 @@ use crate::{
     ch20::{CH20Proof, CH20CRS},
     commitment::{Comm, PedersenParams},
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
+    utils::{binomial, field_pow},
 };
 
 pub struct Ublu<P: Pairing, RNG: RngCore> {
@@ -171,7 +173,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
     fn update_hint(
         &mut self,
-        _pk: &PublicKey<P>,
+        pk: &PublicKey<P>,
         old_hint: &Hint<P>,
         x: u32,
         r_x: &P::ScalarField,
@@ -182,25 +184,59 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
         let mut new_com = self.pedersen.commit_raw(&P::ScalarField::from(x), r_x).com;
         new_com = new_com + old_hint.com_x.clone();
-        let _new_ciphers = self.update_powers(old_hint.ciphers.clone(), r_i_list, x);
+        let _new_ciphers = self.update_powers(
+            old_hint.ciphers.clone(),
+            r_i_list,
+            P::ScalarField::from(x),
+            pk.h,
+        );
         todo!()
     }
 
     fn update_powers(
         &mut self,
-        _old_ciphers: Vec<Cipher<P::G1>>,
-        _r_i_list: Vec<P::ScalarField>,
-        _x: u32,
+        old_ciphers: Vec<Cipher<P::G1>>,
+        r_i_list: Vec<P::ScalarField>,
+        x: P::ScalarField,
+        pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
-        todo!()
+        let v_coeff =
+            |i: usize, j: usize| field_pow(x, i - j) * P::ScalarField::from(binomial(i, j) as u64);
+        let mut new_ciphers: Vec<Cipher<P::G1>> = vec![];
+
+        for i in 0..old_ciphers.len() {
+            let a = old_ciphers
+                .iter()
+                .enumerate()
+                .map(|(j, c_j)| c_j.a * v_coeff(i + 1, j + 1))
+                .reduce(|x, y| x + y)
+                .unwrap()
+                + self.g * r_i_list[i];
+            let b = old_ciphers
+                .iter()
+                .enumerate()
+                .map(|(j, c_j)| c_j.b * v_coeff(i + 1, j + 1))
+                .reduce(|x, y| x + y)
+                .unwrap()
+                + self.g * field_pow(x, i + 1)
+                + pk_h * r_i_list[i];
+
+            new_ciphers.push(Cipher { a, b });
+        }
+
+        new_ciphers
     }
 
     fn blind_powers(
         &self,
-        _old_ciphers: &[Cipher<P::G1>],
-        _alpha: P::ScalarField,
+        old_ciphers: &[Cipher<P::G1>],
+        alpha: P::ScalarField,
     ) -> Vec<Cipher<P::G1>> {
-        todo!()
+        let mut new_ciphers: Vec<_> = old_ciphers.to_vec();
+        for i in 0..new_ciphers.len() {
+            new_ciphers[i].b += self.w[i] * alpha;
+        }
+        new_ciphers
     }
 
     pub fn escrow(&mut self, pk: &PublicKey<P>, hint: &Hint<P>) -> Escrow<P> {
@@ -239,7 +275,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         todo!()
     }
 
-    fn evaluate(&self, _old_ciphers: &[Cipher<P::G1>], _beta: P::ScalarField) -> Cipher<P::G1> {
+    fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
         todo!()
     }
 }

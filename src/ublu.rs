@@ -1,3 +1,6 @@
+#![allow(unused_assignments)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
 use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
 use ark_std::Zero;
@@ -9,7 +12,6 @@ use crate::{
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
 };
 
-#[allow(dead_code)]
 pub struct Ublu<P: Pairing, RNG: RngCore> {
     rng: RNG,
     lambda: u32,
@@ -39,7 +41,6 @@ impl<P: Pairing> From<CH20Proof<P>> for TagProof<P> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicKey<P: Pairing> {
     h: P::G1,
@@ -47,13 +48,11 @@ pub struct PublicKey<P: Pairing> {
     proof_pk: PkProof<P>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SecretKey<P: Pairing> {
     elgamal_sk: ElgamalSk<P::G1>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Hint<P: Pairing> {
     ciphers: Vec<Cipher<P::G1>>,
@@ -92,7 +91,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
     }
 
-    #[allow(unused_variables)]
     pub fn key_gen(&mut self, t: u32) -> (PublicKey<P>, SecretKey<P>, Hint<P>) {
         let (sk, pk) = self.elgamal.key_gen(&mut self.rng);
         let r_t = P::ScalarField::rand(&mut self.rng);
@@ -158,7 +156,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         (new_hint, new_tag)
     }
 
-    #[allow(unused_assignments)]
     fn update_hint(
         &mut self,
         _pk: &PublicKey<P>,

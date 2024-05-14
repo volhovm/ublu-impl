@@ -1,9 +1,8 @@
-use ark_ec::{Group};
+use crate::ch20::{mul_mat_by_vec_g_f, AlgInst, AlgLang, AlgWit};
+use ark_ec::Group;
 use ark_std::UniformRand;
 use ark_transcript::Transcript;
-use rand::{thread_rng};
-use ark_ff::{Zero};
-use crate::ch20::{AlgInst, AlgLang, AlgWit, mul_mat_by_vec_g_f};
+use rand::thread_rng;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct SigmaProof<G: Group> {
@@ -17,13 +16,9 @@ pub enum SigmaVerifierError {
 }
 
 impl<G: Group> SigmaProof<G> {
-    pub fn prove(
-        lang: &AlgLang<G>,
-        inst: &AlgInst<G>,
-        wit: &AlgWit<G>,
-    ) -> SigmaProof<G>
-        where
-            G::ScalarField: UniformRand,
+    pub fn prove(lang: &AlgLang<G>, inst: &AlgInst<G>, wit: &AlgWit<G>) -> SigmaProof<G>
+    where
+        G::ScalarField: UniformRand,
     {
         let mut t = Transcript::new(b"sigma_proof");
         t.append(&inst.0);
@@ -36,22 +31,23 @@ impl<G: Group> SigmaProof<G> {
         let a: Vec<G> = mul_mat_by_vec_g_f(&matrix, &r);
         t.append(&a);
         let chl: G::ScalarField = t.challenge(b"challenge").read_uniform();
-        let z = wit.0.iter().zip(r).map(|(w,r)| r-chl*w ).collect();
-        SigmaProof{a, z}
+        let z = wit.0.iter().zip(r).map(|(w, r)| r - chl * w).collect();
+        SigmaProof { a, z }
     }
 
-    pub fn verify(
-        &self,
-        lang: &AlgLang<G>,
-        inst: &AlgInst<G>,
-    ) -> Result<(), SigmaVerifierError> {
+    pub fn verify(&self, lang: &AlgLang<G>, inst: &AlgInst<G>) -> Result<(), SigmaVerifierError> {
         let mut t = Transcript::new(b"sigma_proof");
         t.append(&inst.0);
         t.append(&self.a);
         let chl: G::ScalarField = t.challenge(b"challenge").read_uniform();
         let matrix = lang.instantiate_matrix(&inst.0);
         let lhs: Vec<G> = mul_mat_by_vec_g_f(&matrix, &self.z);
-        let rhs: Vec<G> = self.a.iter().zip(&inst.0).map(|(a,i)| a.clone() - i.clone()*chl ).collect();
+        let rhs: Vec<G> = self
+            .a
+            .iter()
+            .zip(&inst.0)
+            .map(|(a, i)| *a - *i * chl)
+            .collect();
         if lhs != rhs {
             return Err(SigmaVerifierError::SigmaGenericError(From::from(
                 "Sides are not equal",
@@ -61,12 +57,11 @@ impl<G: Group> SigmaProof<G> {
     }
 }
 
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{CF, CG1};
-    use crate::ch20::LinearPoly;
+    use crate::{ch20::LinearPoly, CF, CG1};
+    use ark_ff::Zero;
     use ark_transcript::Transcript;
 
     #[test]
@@ -74,12 +69,14 @@ pub(crate) mod tests {
         let mut rng = thread_rng();
         let a: CG1 = UniformRand::rand(&mut rng);
         let z: CF = UniformRand::rand(&mut rng);
-        SigmaProof::<CG1>{a: vec![a], z: vec![z]};
+        SigmaProof::<CG1> {
+            a: vec![a],
+            z: vec![z],
+        };
     }
 
     #[test]
     fn transcript_v_witnesses() {
-
         let mut rng = thread_rng();
 
         let protocol_label = b"test collisions";
@@ -134,11 +131,12 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst).unwrap();
+        let ver = proof.verify(&lang, &inst);
         println!("proof is {:?}", ver);
+        assert!(ver.is_ok());
 
         let wrong = proof.verify(&lang, &inst2);
-        assert!(wrong.is_err())
+        assert!(wrong.is_err());
     }
 
     #[allow(non_snake_case)]
@@ -156,8 +154,16 @@ pub(crate) mod tests {
 
         let il = 4;
         let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
-            vec![LinearPoly::constant(il, G), LinearPoly::constant(il, H), LinearPoly::zero(il)],
-            vec![LinearPoly::constant(il, G), LinearPoly::zero(il), LinearPoly::constant(il, H)],
+            vec![
+                LinearPoly::constant(il, G),
+                LinearPoly::constant(il, H),
+                LinearPoly::zero(il),
+            ],
+            vec![
+                LinearPoly::constant(il, G),
+                LinearPoly::zero(il),
+                LinearPoly::constant(il, H),
+            ],
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
@@ -172,8 +178,9 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst).unwrap();
-        println!("proof is {:?}", ver)
+        let ver = proof.verify(&lang, &inst);
+        println!("proof is {:?}", ver);
+        assert!(ver.is_ok());
     }
 
     #[allow(unused_variables)]
@@ -192,8 +199,8 @@ pub(crate) mod tests {
         let b: CF = UniformRand::rand(&mut rng);
         let rb: CF = UniformRand::rand(&mut rng);
 
-        let ba: CF = b*a;
-        let rba: CF = rb*a;
+        let ba: CF = b * a;
+        let rba: CF = rb * a;
 
         let U: CG1 = G * a + H * ra;
         let B: CG1 = G * b + H * rb;
@@ -202,17 +209,51 @@ pub(crate) mod tests {
 
         let il = 8;
         let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
-            vec![LinearPoly::constant(il, G), LinearPoly::constant(il, H), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il)],
-            vec![LinearPoly::zero(il), LinearPoly::zero(il),LinearPoly::constant(il, G), LinearPoly::constant(il, H), LinearPoly::zero(il), LinearPoly::zero(il)],
-            vec![LinearPoly::single(il, 1), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::constant(il, -G), LinearPoly::constant(il, -H),],
-
-            vec![LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::single(il, 5), LinearPoly::zero(il),LinearPoly::zero(il),LinearPoly::zero(il)],
-            vec![LinearPoly::zero(il), LinearPoly::zero(il), LinearPoly::single(il, 6), LinearPoly::zero(il),LinearPoly::single(il, 7),LinearPoly::zero(il)],
+            vec![
+                LinearPoly::constant(il, G),
+                LinearPoly::constant(il, H),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+            ],
+            vec![
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::constant(il, G),
+                LinearPoly::constant(il, H),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+            ],
+            vec![
+                LinearPoly::single(il, 1),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::constant(il, -G),
+                LinearPoly::constant(il, -H),
+            ],
+            vec![
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::single(il, 5),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+            ],
+            vec![
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::single(il, 6),
+                LinearPoly::zero(il),
+                LinearPoly::single(il, 7),
+                LinearPoly::zero(il),
+            ],
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![U,B,G*CF::zero(),E1,E2, PA, PD, PW]);
-        let wit: AlgWit<CG1> = AlgWit(vec![a,ra,b,rb,ba,rba]);
+        let inst: AlgInst<CG1> = AlgInst(vec![U, B, G * CF::zero(), E1, E2, PA, PD, PW]);
+        let wit: AlgWit<CG1> = AlgWit(vec![a, ra, b, rb, ba, rba]);
 
         println!("inst {:?}", lang.instantiate_matrix(&inst.0));
 
@@ -237,12 +278,26 @@ pub(crate) mod tests {
         let B01: CG1 = G * t + H * r01;
         let T: CG1 = G * t + Hcom * rt;
 
-
         let il = 3;
         let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
-            vec![LinearPoly::constant(il, G), LinearPoly::zero(il), LinearPoly::zero(il),LinearPoly::zero(il)],
-            vec![LinearPoly::zero(il), LinearPoly::constant(il, G), LinearPoly::single(il, 0),LinearPoly::zero(il)],
-            vec![LinearPoly::zero(il), LinearPoly::constant(il, G),LinearPoly::zero(il), LinearPoly::constant(il, Hcom)],
+            vec![
+                LinearPoly::constant(il, G),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+                LinearPoly::zero(il),
+            ],
+            vec![
+                LinearPoly::zero(il),
+                LinearPoly::constant(il, G),
+                LinearPoly::single(il, 0),
+                LinearPoly::zero(il),
+            ],
+            vec![
+                LinearPoly::zero(il),
+                LinearPoly::constant(il, G),
+                LinearPoly::zero(il),
+                LinearPoly::constant(il, Hcom),
+            ],
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };

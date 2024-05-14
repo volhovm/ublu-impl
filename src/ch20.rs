@@ -1,5 +1,4 @@
 #![allow(clippy::needless_range_loop)]
-#![allow(dead_code)]
 
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{One, Zero};

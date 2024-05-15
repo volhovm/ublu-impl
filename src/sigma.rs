@@ -6,8 +6,8 @@ use rand::thread_rng;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct SigmaProof<G: Group> {
-    a: Vec<G>,
-    z: Vec<G::ScalarField>,
+    pub a: Vec<G>,
+    pub z: Vec<G::ScalarField>,
 }
 
 #[derive(Debug)]

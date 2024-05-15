@@ -43,8 +43,8 @@ pub struct PkProof<P: Pairing> {
 pub struct TagProof<P: Pairing> {
     _phantom: std::marker::PhantomData<P>,
 }
-impl<P: Pairing> From<CH20Proof<P>> for TagProof<P> {
-    fn from(_value: CH20Proof<P>) -> Self {
+impl<P: Pairing> From<SigmaProof<P::G1>> for TagProof<P> {
+    fn from(_value: SigmaProof<P::G1>) -> Self {
         // TODO
         TagProof {
             _phantom: std::marker::PhantomData,
@@ -230,10 +230,11 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         // TODO do the proofs
 
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
-        let proof_t = CH20Proof {
-            a: Vec::new(),
-            d: Vec::new(),
+        let proof_t = SigmaProof {
+            a: vec![],
+            z: vec![],
         };
+
         let new_tag = Tag {
             proof: proof_t.into(),
             com: new_hint.com_x.clone(),

@@ -26,7 +26,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     elgamal: ElgamalParams<P::G1>,
     pedersen: PedersenParams<P::G1>,
     ch20: CH20CRS<P>,
-    stirling: Vec<Vec<u32>>,
+    stirling: Vec<u32>,
 }
 
 //TODO placeholder
@@ -42,7 +42,10 @@ pub struct TagProof<P: Pairing> {
 }
 impl<P: Pairing> From<CH20Proof<P>> for TagProof<P> {
     fn from(_value: CH20Proof<P>) -> Self {
-        todo!()
+        // TODO
+        TagProof {
+            _phantom: std::marker::PhantomData,
+        }
     }
 }
 
@@ -112,7 +115,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
         let ch20: CH20CRS<P> = CH20CRS::setup(&mut rng);
         // Compute Stirling table
-        let stirling: Vec<Vec<u32>> = stirling2_table(d);
+        let stirling: Vec<u32> = stirling2_table(d).last().unwrap().to_owned();
+        // let stirling = stirling_tab.iter().map(|x| *x as usize).collect();
         Ublu {
             lambda,
             d,
@@ -174,13 +178,13 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         hint: &Hint<P>,
         _old_tag: Option<&Tag<P>>,
         x: usize,
-        rnd: &P::ScalarField,
     ) -> (Hint<P>, Tag<P>) {
+        let rnd = P::ScalarField::rand(&mut self.rng);
         let r_x = P::ScalarField::rand(&mut self.rng);
         let new_hint = self.update_hint(pk, hint, x, &r_x);
         let _cur_com = self
             .pedersen
-            .commit_raw(&P::ScalarField::from(x as u64), rnd);
+            .commit_raw(&P::ScalarField::from(x as u64), &rnd);
         // TODO do the proofs
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
         let proof_t = CH20Proof {
@@ -209,8 +213,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut new_com = self.pedersen.commit_raw(&x_field, r_x).com;
         new_com = new_com + old_hint.com_x.clone();
         // TODO can probably be optimized a bit by modifying cipherts in place
-        let new_ciphers =
-            self.update_powers(old_hint.ciphers.clone(), r_i_list.clone(), x_field, pk.h);
+        let new_ciphers = self.update_powers2(old_hint.ciphers.clone(), r_i_list.clone(), x, pk.h);
         let com_u = self
             .pedersen
             .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
@@ -253,6 +256,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut new_ciphers: Vec<Cipher<P::G1>> = vec![];
 
         for i in 0..old_ciphers.len() {
+            // TODO fails with negative subtraction because the j's should only iterate up to i, but goes all the way to d
             let a = old_ciphers
                 .iter()
                 .enumerate()
@@ -273,6 +277,37 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
 
         new_ciphers
+    }
+
+    fn update_powers2(
+        &mut self,
+        old_ciphers: Vec<Cipher<P::G1>>,
+        r_i_list: Vec<P::ScalarField>,
+        x: usize,
+        pk_h: P::G1,
+    ) -> Vec<Cipher<P::G1>> {
+        let mut new_ciphers = Vec::with_capacity(self.d);
+        for i in 1..=self.d {
+            let mut cur_a_res = P::G1::zero();
+            let mut cur_b_res = P::G1::zero();
+            for j in 1..=i {
+                let cur_v_val = P::ScalarField::from(Self::v_func(x, i, j) as u64);
+                cur_a_res += old_ciphers.get(j - 1).unwrap().a * cur_v_val;
+                cur_b_res += old_ciphers.get(j - 1).unwrap().b * cur_v_val;
+            }
+            cur_a_res += self.g * r_i_list.get(i - 1).unwrap();
+            cur_b_res += pk_h * r_i_list.get(i - 1).unwrap();
+            new_ciphers.push(Cipher {
+                a: cur_a_res,
+                b: cur_b_res,
+            });
+        }
+        new_ciphers
+    }
+
+    fn v_func(x: usize, i: usize, j: usize) -> usize {
+        let bin = binomial(i, j);
+        bin * x.pow((i - j) as u32)
     }
 
     fn blind_powers(
@@ -299,13 +334,14 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
         let escrow_enc = self.evaluate(&hint.ciphers, beta);
 
-        let proof_c = {
-            let todo = || unimplemented!();
-            todo()
+        // TODO placeholder for test
+        let proof_c = CH20Proof {
+            a: Vec::new(),
+            d: Vec::new(),
         };
-        let proof_e = {
-            let todo = || unimplemented!();
-            todo()
+        let proof_e = CH20Proof {
+            a: Vec::new(),
+            d: Vec::new(),
         };
 
         Escrow {
@@ -327,6 +363,38 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     }
 
     fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
-        todo!()
+        let mut e_1 = P::G1::zero();
+        let mut e_2 = P::G1::zero();
+        for i in 1..=self.d {
+            e_1 += old_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
+            e_1 += old_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+        }
+        e_1 *= beta;
+        e_2 *= beta;
+        Cipher { a: e_1, b: e_2 }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use aes_prng::AesRng;
+    use ark_bls12_381::Bls12_381;
+    use rand::SeedableRng;
+
+    use super::Ublu;
+
+    #[test]
+    fn sunshine() {
+        let lambda = 40;
+        let d = 10;
+        let t = 5;
+        let x = 4;
+        let rng = AesRng::seed_from_u64(1);
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
+        let (pk, sk, hint_0) = ublu.key_gen(t);
+        let (hint_1, tag_1) = ublu.update(&pk, &hint_0, None, x);
+        let escrow = ublu.escrow(&pk, &hint_1);
+        // We only added 4, and the threshold is 5, so we should fail
+        assert!(!ublu.decrypt(&sk, &escrow));
     }
 }

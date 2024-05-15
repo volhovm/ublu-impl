@@ -7,13 +7,14 @@ use crate::{
     ch20::{CH20Proof, CH20CRS},
     commitment::{InnerCom, PedersenParams},
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
+    utils::binomial,
 };
 
 #[allow(dead_code)]
 pub struct Ublu<P: Pairing, RNG: RngCore> {
     rng: RNG,
-    lambda: u32,
-    d: u32,
+    lambda: usize,
+    d: usize,
     g: P::G1,
     com_h: P::G1,
     w: Vec<P::G1>,
@@ -68,13 +69,28 @@ pub struct Tag<P: Pairing> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XC {}
+pub struct XC<P: Pairing> {
+    h: P::G1,
+    comt_t: InnerCom<P::G1>,
+    old_com_x: InnerCom<P::G1>,
+    com_u: InnerCom<P::G1>,
+    old_ciphers: Vec<Cipher<P::G1>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WC<P: Pairing> {
+    x: usize,
+    r_list: Vec<P::ScalarField>,
+    r_x: P::ScalarField,
+    alpha: P::ScalarField,
+    r_alpha: P::ScalarField,
+}
 
 impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
-    pub fn setup(lambda: u32, d: u32, mut rng: RNG) -> Self {
+    pub fn setup(lambda: usize, d: usize, mut rng: RNG) -> Self {
         let g = P::G1::rand(&mut rng);
         let com_h = P::G1::rand(&mut rng);
-        let mut w: Vec<P::G1> = Vec::with_capacity(d as usize);
+        let mut w: Vec<P::G1> = Vec::with_capacity(d);
         for _i in 0..d {
             w.push(P::G1::rand(&mut rng));
         }
@@ -100,7 +116,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut cipher_vec = Vec::with_capacity(t as usize);
         for i in 1..=self.d {
             let base = -(t as i32);
-            let cur_msg = base.pow(i);
+            let cur_msg = base.pow(i as u32);
             let cur_r = P::ScalarField::rand(&mut self.rng);
             r_vec.push(cur_r);
             cipher_vec.push(self.elgamal.encrypt_raw(&pk, cur_msg, cur_r));
@@ -139,12 +155,14 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         pk: &PublicKey<P>,
         hint: &Hint<P>,
         _old_tag: Option<&Tag<P>>,
-        x: u32,
+        x: usize,
         rnd: &P::ScalarField,
     ) -> (Hint<P>, Tag<P>) {
         let r_x = P::ScalarField::rand(&mut self.rng);
         let new_hint = self.update_hint(pk, hint, x, &r_x);
-        let _cur_com = self.pedersen.commit_raw(&P::ScalarField::from(x), rnd);
+        let _cur_com = self
+            .pedersen
+            .commit_raw(&P::ScalarField::from(x as u64), rnd);
         // TODO do the proofs
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
         let proof_t = CH20Proof {
@@ -158,30 +176,82 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         (new_hint, new_tag)
     }
 
-    #[allow(unused_assignments)]
     fn update_hint(
         &mut self,
-        _pk: &PublicKey<P>,
+        pk: &PublicKey<P>,
         old_hint: &Hint<P>,
-        x: u32,
+        x: usize,
         r_x: &P::ScalarField,
     ) -> Hint<P> {
-        let mut r_i_list = Vec::with_capacity(self.d as usize);
+        let mut r_i_list = Vec::with_capacity(self.d);
         for _i in 0..self.d {
             r_i_list.push(P::ScalarField::rand(&mut self.rng));
         }
-        let mut new_com = self.pedersen.commit_raw(&P::ScalarField::from(x), r_x).com;
+        let mut new_com = self
+            .pedersen
+            .commit_raw(&P::ScalarField::from(x as u64), r_x)
+            .com;
         new_com = new_com + old_hint.com_x.clone();
-        let _new_ciphers = self.update_powers(old_hint.ciphers.clone(), r_i_list, x);
-        todo!()
+        // TODO can probably be optimized a bit by modifying cipherts in place
+        let new_ciphers = self.update_powers(pk, old_hint.ciphers.clone(), r_i_list.clone(), x);
+        let com_u = self
+            .pedersen
+            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
+        let _xc: XC<P> = XC {
+            h: pk.h,
+            comt_t: pk.com_t.clone(),
+            old_com_x: old_hint.com_x.clone(),
+            com_u: com_u.com,
+            old_ciphers: old_hint.ciphers.clone(),
+        };
+        let _wc: WC<P> = WC {
+            x,
+            r_list: r_i_list,
+            r_x: *r_x,
+            alpha: P::ScalarField::zero(),
+            r_alpha: P::ScalarField::zero(),
+        };
+        // TODO do update proof
+        let pi_c: CH20Proof<P> = CH20Proof {
+            a: Vec::new(),
+            d: Vec::new(),
+        };
+
+        Hint {
+            ciphers: new_ciphers,
+            com_x: new_com,
+            proof_c: pi_c,
+        }
     }
 
     fn update_powers(
         &mut self,
-        _old_ciphers: Vec<Cipher<P::G1>>,
-        _r_i_list: Vec<P::ScalarField>,
-        _x: u32,
+        pk: &PublicKey<P>,
+        old_ciphers: Vec<Cipher<P::G1>>,
+        r_i_list: Vec<P::ScalarField>,
+        x: usize,
     ) -> Vec<Cipher<P::G1>> {
-        todo!()
+        let mut new_ciphers = Vec::with_capacity(self.d);
+        for i in 1..=self.d {
+            let mut cur_a_res = P::G1::zero();
+            let mut cur_b_res = P::G1::zero();
+            for j in 1..=i {
+                let cur_v_val = P::ScalarField::from(v_func(x, i, j) as u64);
+                cur_a_res += old_ciphers.get(j - 1).unwrap().a * cur_v_val;
+                cur_b_res += old_ciphers.get(j - 1).unwrap().b * cur_v_val;
+            }
+            cur_a_res += self.g * r_i_list.get(i - 1).unwrap();
+            cur_b_res += pk.h * r_i_list.get(i - 1).unwrap();
+            new_ciphers.push(Cipher {
+                a: cur_a_res,
+                b: cur_b_res,
+            });
+        }
+        new_ciphers
     }
+}
+
+fn v_func(x: usize, i: usize, j: usize) -> usize {
+    let bin = binomial(i, j);
+    bin * x.pow((i - j) as u32)
 }

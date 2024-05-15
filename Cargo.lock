@@ -440,6 +440,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stirling_numbers"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7f85a2d5a816fe63aa975431908b96d447ba14c494a21fd197e4b53140a814"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -480,6 +489,7 @@ dependencies = [
  "ark-std",
  "ark-transcript",
  "rand",
+ "stirling_numbers",
 ]
 
 [[package]]

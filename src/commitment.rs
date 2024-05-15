@@ -16,7 +16,7 @@ pub struct CommWithRand<G: Group> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Comm<G: Group> {
-    value: G,
+    pub value: G,
 }
 
 impl<G: Group> ops::Add<Comm<G>> for Comm<G> {

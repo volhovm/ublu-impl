@@ -8,6 +8,9 @@ use ark_std::Zero;
 use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
+use crate::ch20::{AlgInst, AlgWit};
+use crate::languages::key_lang;
+use crate::sigma::SigmaProof;
 use crate::{
     ch20::{CH20Proof, CH20CRS},
     commitment::{Comm, PedersenParams},
@@ -32,7 +35,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
 //TODO placeholder
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PkProof<P: Pairing> {
-    _phantom: std::marker::PhantomData<P>,
+    proof: SigmaProof<P::G1>,
 }
 
 //TODO placeholder
@@ -151,6 +154,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .pedersen
             .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
         // TODO do the proofs
+        let lang = key_lang(self.g, self.com_h);
+        let inst = AlgInst(vec![pk.h, cipher_vec[1].b, com_t.com.value]); //B01
+        let wit = AlgWit(vec![sk.sk, P::ScalarField::from(t), r_vec[1], r_t]);
+        assert!(lang.contains(&inst, &wit));
+        let proof = SigmaProof::prove(&lang, &inst, &wit);
+        let proof_pk = PkProof { proof };
         let proof_c = CH20Proof {
             a: Vec::new(),
             d: Vec::new(),
@@ -159,9 +168,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             PublicKey {
                 h: pk.h,
                 com_t: com_t.com,
-                proof_pk: PkProof::<P> {
-                    _phantom: std::marker::PhantomData,
-                },
+                proof_pk,
             },
             SecretKey { elgamal_sk: sk },
             Hint {
@@ -186,6 +193,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .pedersen
             .commit_raw(&P::ScalarField::from(x as u64), &rnd);
         // TODO do the proofs
+
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
         let proof_t = CH20Proof {
             a: Vec::new(),

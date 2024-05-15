@@ -8,13 +8,13 @@ use ark_std::Zero;
 use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
-use crate::ch20::{AlgInst, AlgWit};
-use crate::languages::key_lang;
-use crate::sigma::SigmaProof;
 use crate::{
-    ch20::{CH20Proof, CH20CRS},
+    ch20::{AlgInst, AlgWit, CH20Proof, CH20CRS},
     commitment::{Comm, PedersenParams},
+    consistency,
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
+    languages::key_lang,
+    sigma::SigmaProof,
     utils::{binomial, field_pow},
 };
 
@@ -135,14 +135,15 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     }
 
     pub fn key_gen(&mut self, t: u32) -> (PublicKey<P>, SecretKey<P>, Hint<P>) {
-        let (sk, pk) = self.elgamal.key_gen(&mut self.rng);
-        let r_t = P::ScalarField::rand(&mut self.rng);
+        let rng = &mut self.rng;
+        let (sk, pk) = self.elgamal.key_gen(rng);
+        let r_t = P::ScalarField::rand(rng);
         let mut r_vec = Vec::with_capacity(t as usize);
         let mut cipher_vec = Vec::with_capacity(t as usize);
         for i in 1..=self.d {
             let base = -(t as i32);
             let cur_msg = base.pow(i as u32);
-            let cur_r = P::ScalarField::rand(&mut self.rng);
+            let cur_r = P::ScalarField::rand(rng);
             r_vec.push(cur_r);
             cipher_vec.push(self.elgamal.encrypt_raw(&pk, cur_msg, cur_r));
         }
@@ -153,17 +154,51 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let com_u0 = self
             .pedersen
             .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
-        // TODO do the proofs
-        let lang = key_lang(self.g, self.com_h);
-        let inst = AlgInst(vec![pk.h, cipher_vec[1].b, com_t.com.value]); //B01
-        let wit = AlgWit(vec![sk.sk, P::ScalarField::from(t), r_vec[1], r_t]);
-        assert!(lang.contains(&inst, &wit));
-        let proof = SigmaProof::prove(&lang, &inst, &wit);
-        let proof_pk = PkProof { proof };
-        let proof_c = CH20Proof {
-            a: Vec::new(),
-            d: Vec::new(),
+
+        let proof_pk = {
+            let lang = key_lang(self.g, self.com_h);
+            let inst = AlgInst(vec![pk.h, cipher_vec[1].b, com_t.com.value]); //B01
+            let wit = AlgWit(vec![sk.sk, P::ScalarField::from(t), r_vec[1], r_t]);
+            assert!(lang.contains(&inst, &wit));
+            let proof = SigmaProof::prove(&lang, &inst, &wit);
+            PkProof { proof }
         };
+
+        let proof_c = {
+            let x: P::ScalarField = From::from(0u64);
+            let r_x: P::ScalarField = From::from(0u64);
+            let alpha: P::ScalarField = From::from(0u64);
+            let r_alpha: P::ScalarField = From::from(0u64);
+            let rs: Vec<P::ScalarField> = (0..self.d).map(|_i| From::from(0u64)).collect();
+
+            let hs: Vec<P::G1> = [self.com_h, pk.h]
+                .into_iter()
+                .chain(self.w.clone())
+                .collect();
+
+            let wit = consistency::consistency_form_wit(
+                self.d,
+                From::from(t),
+                r_t,
+                x,
+                r_x,
+                alpha,
+                r_alpha,
+                rs,
+            );
+            let inst = consistency::consistency_wit_to_inst(self.g, &hs, self.d, &wit);
+
+            let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
+
+            let inst_core = consistency::consistency_inst_to_core(self.d, &inst);
+            let wit_core = consistency::consistency_wit_to_core(&wit);
+
+            let proof: CH20Proof<P> =
+                CH20Proof::prove(&self.ch20, &lang_core, &inst_core, &wit_core);
+
+            proof
+        };
+
         (
             PublicKey {
                 h: pk.h,

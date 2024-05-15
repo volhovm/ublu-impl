@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 #![allow(clippy::needless_range_loop)]
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{One, Zero};
@@ -87,52 +88,15 @@ pub fn consistency_core_lang<G: Group>(g: G, hs: &[G], d: usize) -> AlgLang<G> {
     AlgLang { matrix: matrix2 }
 }
 
-pub fn consistency_gen_inst_wit<G: Group, RNG: RngCore>(
-    g: G,
-    hs: &[G],
-    d: usize,
-    rng: &mut RNG,
-) -> (AlgInst<G>, AlgWit<G>) {
-    let t: G::ScalarField = UniformRand::rand(rng);
-    let r_t: G::ScalarField = UniformRand::rand(rng);
-    let x: G::ScalarField = UniformRand::rand(rng);
-    let r_x: G::ScalarField = UniformRand::rand(rng);
-    //let alpha: G::ScalarField = UniformRand::rand(rng);
-    //let r_alpha: G::ScalarField = UniformRand::rand(rng);
+pub fn consistency_wit_to_inst<G: Group>(g: G, hs: &[G], d: usize, wit: &AlgWit<G>) -> AlgInst<G> {
+    let t: G::ScalarField = wit.0[0];
+    let r_t: G::ScalarField = wit.0[1];
+    let x: G::ScalarField = wit.0[2];
+    let r_x: G::ScalarField = wit.0[3];
+    let alpha: G::ScalarField = wit.0[4];
+    let r_alpha: G::ScalarField = wit.0[5];
 
-    //let t: G::ScalarField = From::from(0u64);
-    //let r_t: G::ScalarField = From::from(0u64);
-    //ler x: G::ScalarField = From::from(0u64);
-    //let r_x: G::ScalarField = From::from(0u64);
-    let alpha: G::ScalarField = From::from(0u64);
-    let r_alpha: G::ScalarField = From::from(0u64);
-
-    let x_minus_t = x - t;
-    let alpha_x_minus_t = alpha * (x_minus_t);
-    let r_alpha_x_minus_t = r_alpha * (x_minus_t);
-
-    //let rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
-    let rs: Vec<G::ScalarField> = (0..d).map(|_i| From::from(1u64)).collect();
-    let rs_x_minus_t: Vec<G::ScalarField> =
-        rs.iter().take(d - 1).map(|ri| *ri * x_minus_t).collect();
-
-    let wit: AlgWit<G> = AlgWit(
-        vec![
-            t,
-            r_t,
-            x,
-            r_x,
-            alpha,
-            r_alpha,
-            x_minus_t,
-            alpha_x_minus_t,
-            r_alpha_x_minus_t,
-        ]
-        .into_iter()
-        .chain(rs.clone())
-        .chain(rs_x_minus_t)
-        .collect(),
-    );
+    let rs: Vec<G::ScalarField> = wit.0[9..9 + d].to_vec();
 
     let tcal = g * t + hs[0] * r_t;
     let xcal = g * x + hs[0] * r_x;
@@ -148,15 +112,87 @@ pub fn consistency_gen_inst_wit<G: Group, RNG: RngCore>(
         .zip(d_s)
         .flat_map(|(ai, di)| vec![ai, di])
         .collect();
-    let inst: AlgInst<G> = AlgInst(
+
+    AlgInst(
         vec![tcal, xcal, acal]
             .into_iter()
             .chain(ad_s)
             .chain(vec![G::zero(); d + 1])
             .collect(),
-    );
+    )
+}
+
+pub fn consistency_form_wit<G: Group>(
+    d: usize,
+    t: G::ScalarField,
+    r_t: G::ScalarField,
+    x: G::ScalarField,
+    r_x: G::ScalarField,
+    alpha: G::ScalarField,
+    r_alpha: G::ScalarField,
+    rs: Vec<G::ScalarField>,
+) -> AlgWit<G> {
+    let x_minus_t = x - t;
+    let alpha_x_minus_t = alpha * (x_minus_t);
+    let r_alpha_x_minus_t = r_alpha * (x_minus_t);
+
+    let rs_x_minus_t: Vec<G::ScalarField> =
+        rs.iter().take(d - 1).map(|ri| *ri * x_minus_t).collect();
+
+    AlgWit(
+        vec![
+            t,
+            r_t,
+            x,
+            r_x,
+            alpha,
+            r_alpha,
+            x_minus_t,
+            alpha_x_minus_t,
+            r_alpha_x_minus_t,
+        ]
+        .into_iter()
+        .chain(rs.clone())
+        .chain(rs_x_minus_t)
+        .collect(),
+    )
+}
+
+pub fn consistency_gen_inst_wit<G: Group, RNG: RngCore>(
+    g: G,
+    hs: &[G],
+    d: usize,
+    rng: &mut RNG,
+) -> (AlgInst<G>, AlgWit<G>) {
+    let t: G::ScalarField = UniformRand::rand(rng);
+    let r_t: G::ScalarField = UniformRand::rand(rng);
+    let x: G::ScalarField = UniformRand::rand(rng);
+    let r_x: G::ScalarField = UniformRand::rand(rng);
+    let alpha: G::ScalarField = From::from(0u64);
+    let r_alpha: G::ScalarField = From::from(0u64);
+    let rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
+
+    let wit = consistency_form_wit(d, t, r_t, x, r_x, alpha, r_alpha, rs);
+    let inst = consistency_wit_to_inst(g, hs, d, &wit);
 
     (inst, wit)
+}
+
+pub fn consistency_inst_to_core<G: Group>(d: usize, inst: &AlgInst<G>) -> AlgInst<G> {
+    let mut inst_core = inst.clone();
+    inst_core.0.remove(4 + 2 * d);
+    inst_core.0.remove(2);
+    inst_core
+}
+
+pub fn consistency_wit_to_core<G: Group>(wit: &AlgWit<G>) -> AlgWit<G> {
+    let mut wit_core = wit.clone();
+    wit_core.0.remove(8);
+    wit_core.0.remove(7);
+    wit_core.0.remove(5);
+    wit_core.0.remove(4);
+
+    wit_core
 }
 
 pub fn consistency_core_gen_inst_wit<G: Group, RNG: RngCore>(
@@ -167,21 +203,12 @@ pub fn consistency_core_gen_inst_wit<G: Group, RNG: RngCore>(
 ) -> (AlgInst<G>, AlgWit<G>) {
     let (inst, wit) = consistency_gen_inst_wit(g, hs, d, rng);
 
-    let mut inst_core = inst.clone();
-    let mut wit_core = wit.clone();
-
-    wit_core.0.remove(8);
-    wit_core.0.remove(7);
-    wit_core.0.remove(5);
-    wit_core.0.remove(4);
-
-    inst_core.0.remove(4 + 2 * d);
-    inst_core.0.remove(2);
+    let inst_core = consistency_inst_to_core(d, &inst);
+    let wit_core = consistency_wit_to_core(&wit);
 
     (inst_core, wit_core)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn consistency_trans<G: Group>(
     g: G,
     hs: &[G],

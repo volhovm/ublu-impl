@@ -5,9 +5,10 @@ pub mod ch20;
 pub mod commitment;
 pub mod consistency;
 pub mod elgamal;
+pub mod languages;
+pub mod sigma;
 pub mod ublu;
 pub mod utils;
-pub mod sigma;
 
 /// Concrete curve
 pub type CC = Bls12_381;

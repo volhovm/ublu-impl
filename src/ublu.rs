@@ -9,7 +9,7 @@ use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
 use crate::{
-    ch20::{AlgInst, AlgWit, CH20Proof, CH20CRS},
+    ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
     consistency,
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
@@ -276,15 +276,52 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         };
         let _wc: WC<P> = WC {
             x,
-            r_list: r_i_list,
+            r_list: r_i_list.clone(),
             r_x: *r_x,
             alpha: P::ScalarField::zero(),
             r_alpha: P::ScalarField::zero(),
         };
-        // TODO do update proof
-        let pi_c: CH20Proof<P> = CH20Proof {
-            a: Vec::new(),
-            d: Vec::new(),
+
+        let pi_c: CH20Proof<P> = {
+            let hs: Vec<P::G1> = [self.com_h, pk.h]
+                .into_iter()
+                .chain(self.w.clone())
+                .collect();
+
+            let old_ciphers: Vec<_> = old_hint
+                .ciphers
+                .clone()
+                .into_iter()
+                .flat_map(|c| [])
+                .collect();
+
+            let inst_core = AlgInst(
+                vec![pk.com_t.value, old_hint.com_x.value, P::G1::zero()]
+                    .into_iter()
+                    .chain(old_ciphers)
+                    .chain(vec![P::G1::zero(); self.d])
+                    .collect(),
+            );
+
+            let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
+            let trans_core: CH20Trans<P::G1> = consistency::consistency_core_trans(
+                self.g,
+                &hs,
+                self.d,
+                From::from(x as u64),
+                *r_x,
+                r_i_list.clone(),
+            );
+
+            let proof_c_new =
+                old_hint
+                    .proof_c
+                    .update(&self.ch20, &lang_core, &inst_core, &trans_core);
+
+            CH20Proof {
+                a: Vec::new(),
+                d: Vec::new(),
+            }
         };
 
         Hint {
@@ -330,7 +367,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     }
 
     fn update_powers2(
-        &mut self,
+        &self,
         old_ciphers: Vec<Cipher<P::G1>>,
         r_i_list: Vec<P::ScalarField>,
         x: usize,

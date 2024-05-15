@@ -6,6 +6,7 @@ use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
 use ark_std::Zero;
 use rand::RngCore;
+use stirling_numbers::stirling2_table;
 
 use crate::{
     ch20::{CH20Proof, CH20CRS},
@@ -25,6 +26,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     elgamal: ElgamalParams<P::G1>,
     pedersen: PedersenParams<P::G1>,
     ch20: CH20CRS<P>,
+    stirling: Vec<Vec<u32>>,
 }
 
 //TODO placeholder
@@ -109,6 +111,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             w.push(P::G1::rand(&mut rng));
         }
         let ch20: CH20CRS<P> = CH20CRS::setup(&mut rng);
+        // Compute Stirling table
+        let stirling: Vec<Vec<u32>> = stirling2_table(d);
         Ublu {
             lambda,
             d,
@@ -119,6 +123,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             ch20,
             com_h,
             rng,
+            stirling,
         }
     }
 

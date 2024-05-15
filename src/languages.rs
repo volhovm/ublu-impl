@@ -140,7 +140,7 @@ pub fn trace_lang<G: Group>(g: G, h_com: G) -> AlgLang<G> {
 pub(crate) mod tests {
     use super::*;
     use crate::sigma::SigmaProof;
-    use crate::CF;
+    use crate::{CF, CG1};
     use ark_std::UniformRand;
     use rand::thread_rng;
 

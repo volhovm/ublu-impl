@@ -315,7 +315,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     }
 
     pub fn decrypt(&self, sk: &SecretKey<P>, escrow: &Escrow<P>) -> bool {
-        todo!()
+        let e_1 = escrow.escrow_enc.a;
+        let e_2 = escrow.escrow_enc.b;
+        let m = e_2 - e_1 * sk.elgamal_sk.sk;
+        m == self.g
     }
 
     fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {

@@ -377,11 +377,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::Ublu;
     use aes_prng::AesRng;
     use ark_bls12_381::Bls12_381;
     use rand::SeedableRng;
-
-    use super::Ublu;
 
     #[test]
     fn sunshine() {
@@ -393,8 +392,12 @@ pub(crate) mod tests {
         let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
         let (pk, sk, hint_0) = ublu.key_gen(t);
         let (hint_1, tag_1) = ublu.update(&pk, &hint_0, None, x);
-        let escrow = ublu.escrow(&pk, &hint_1);
+        let escrow_1 = ublu.escrow(&pk, &hint_1);
         // We only added 4, and the threshold is 5, so we should fail
-        assert!(!ublu.decrypt(&sk, &escrow));
+        assert!(!ublu.decrypt(&sk, &escrow_1));
+        // We add 2 more, so now we should succeed
+        let (hint_2, tag_2) = ublu.update(&pk, &hint_0, None, x);
+        let escrow_2 = ublu.escrow(&pk, &hint_2);
+        assert!(ublu.decrypt(&sk, &escrow_2));
     }
 }

@@ -230,6 +230,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         // TODO do the proofs
 
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
+        //
+        // volhovm:
+        // - calX_0 is generated in KeyGen
+        // - pi_{t,0} does not exist, however we can assume pi_{t,0} is some constant "dummy" value,
+        //  e.g. SigmaProof { vec![], vec![] }. Remember that we "bind" the previous
+        // trace proof by absorbing it into the Fiat Shamir hash, so it can be anything.
         let proof_t = SigmaProof {
             a: vec![],
             z: vec![],

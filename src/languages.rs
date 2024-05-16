@@ -15,13 +15,13 @@ pub fn key_lang<G: Group>(g: G, h_com: G) -> AlgLang<G> {
         ],
         vec![
             LinearPoly::zero(il),
-            LinearPoly::constant(il, g),
+            LinearPoly::constant(il, -g),
             LinearPoly::single(il, 0),
             LinearPoly::zero(il),
         ],
         vec![
             LinearPoly::zero(il),
-            LinearPoly::constant(il, -g),
+            LinearPoly::constant(il, g),
             LinearPoly::zero(il),
             LinearPoly::constant(il, h_com),
         ],
@@ -157,7 +157,7 @@ pub(crate) mod tests {
         let rt: CF = UniformRand::rand(&mut rng);
 
         let H: CG1 = G * sk;
-        let B01: CG1 = G * t + H * r01;
+        let B01: CG1 = G * (-t) + H * r01;
         let T: CG1 = G * t + Hcom * rt;
 
         let lang: AlgLang<CG1> = key_lang(G, Hcom);

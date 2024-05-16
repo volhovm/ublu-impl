@@ -92,17 +92,16 @@ pub fn escrow_gen_wit<G: Group, RNG: RngCore>(rng: &mut RNG) -> AlgWit<G> {
 pub fn escrow_gen_inst_from_wit<G: Group>(
     g: G,
     h_com: G,
-    a_hint: &[G],
-    d_hint: &[G],
-    w_hint: &[G],
+    prod_a: G,
+    prod_d: G,
+    prod_w: G,
     wit: &AlgWit<G>,
 ) -> AlgInst<G> {
     let u: G = g * wit.0[0] + h_com * wit.0[1]; // g*alpha + h*ralpha
     let b: G = g * wit.0[2] + h_com * wit.0[3]; // g * b + h_com * rb
-    let prod_a = a_hint.iter().sum();
-    let prod_d = d_hint.iter().sum();
-    let prod_w = w_hint.iter().sum();
-    //todo!("raise elemnts to U and -U");
+                                                //let prod_a = a_hint.iter().sum();
+                                                //let prod_d = d_hint.iter().sum();
+                                                //let prod_w = w_hint.iter().sum();
     let escrow1: G = prod_a * wit.0[2]; // PA * b
     let escrow2: G = prod_d * wit.0[2] + prod_w * wit.0[4]; // PD * b + PW * ba
 
@@ -189,8 +188,7 @@ pub(crate) mod tests {
 
         let lang: AlgLang<CG1> = escrow_lang(G, H);
         let wit: AlgWit<CG1> = escrow_gen_wit(&mut rng);
-        let inst: AlgInst<CG1> =
-            escrow_gen_inst_from_wit(G, H, &vec![PA], &vec![PD], &vec![PW], &wit);
+        let inst: AlgInst<CG1> = escrow_gen_inst_from_wit(G, H, PA, PD, PW, &wit);
 
         println!("inst {:?}", lang.instantiate_matrix(&inst.0));
 

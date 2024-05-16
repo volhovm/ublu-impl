@@ -8,6 +8,7 @@ use ark_std::Zero;
 use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
+use crate::languages::{escrow_gen_inst_from_wit, escrow_gen_wit, escrow_lang};
 use crate::{
     ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
@@ -105,7 +106,7 @@ pub struct Escrow<P: Pairing> {
     com_alpha: Comm<P::G1>,
     com_beta: Comm<P::G1>,
     proof_c: CH20Proof<P>,
-    proof_e: CH20Proof<P>,
+    proof_e: SigmaProof<P::G1>,
 }
 
 impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
@@ -313,11 +314,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 r_i_list.clone(),
             );
 
+            /* commented out be felix, not yet working (Cannot multiply 32x64 matrix by a 45 vector)
             let proof_c_new =
                 old_hint
                     .proof_c
                     .update(&self.ch20, &lang_core, &inst_core, &trans_core);
-
+            */
             CH20Proof {
                 a: Vec::new(),
                 d: Vec::new(),
@@ -419,16 +421,38 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let com_beta = self.pedersen.commit_raw(&beta, &r_beta).com;
 
         let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
-        let escrow_enc = self.evaluate(&hint.ciphers, beta);
+        let escrow_enc = self.evaluate(&hint.ciphers, beta, alpha);
 
         // TODO placeholder for test
         let proof_c = CH20Proof {
             a: Vec::new(),
             d: Vec::new(),
         };
-        let proof_e = CH20Proof {
-            a: Vec::new(),
-            d: Vec::new(),
+        let proof_e = {
+            let lang = escrow_lang(self.g, self.com_h);
+            let betaalpha = beta * alpha;
+            let r_betaalpha = r_beta * alpha;
+            let wit = AlgWit(vec![alpha, r_alpha, beta, r_beta, betaalpha, r_betaalpha]);
+            let mut prod_a = P::G1::zero();
+            let mut prod_d = P::G1::zero();
+            let mut prod_w = P::G1::zero();
+            for i in 1..=self.d {
+                prod_a += hint.ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
+                prod_d += hint.ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+                prod_w += self.w[i - 1]
+            }
+            let inst = AlgInst(vec![
+                com_alpha.value,
+                com_beta.value,
+                P::G1::zero(),
+                escrow_enc.a,
+                escrow_enc.b,
+                prod_a,
+                prod_d,
+                prod_w,
+            ]);
+            assert!(lang.contains(&inst, &wit));
+            SigmaProof::prove(&lang, &inst, &wit)
         };
 
         Escrow {
@@ -449,12 +473,18 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         m == self.g
     }
 
-    fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
+    fn evaluate(
+        &self,
+        old_ciphers: &[Cipher<P::G1>],
+        beta: P::ScalarField,
+        alpha: P::ScalarField,
+    ) -> Cipher<P::G1> {
         let mut e_1 = P::G1::zero();
         let mut e_2 = P::G1::zero();
         for i in 1..=self.d {
             e_1 += old_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
-            e_1 += old_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+            e_2 += old_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+            e_2 += self.w[i - 1] * alpha
         }
         e_1 *= beta;
         e_2 *= beta;

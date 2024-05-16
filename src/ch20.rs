@@ -79,14 +79,17 @@ impl<G: Group> AlgLang<G> {
         // the rest of the instance may be only needed for instantiate_matrix
 
         if inst2 != inst.0[0..self.inst_size()] {
-            for (idx, (i2,i)) in inst2.iter().zip(inst.0[0..self.inst_size()].iter()).enumerate() {
+            for (idx, (i2, i)) in inst2
+                .iter()
+                .zip(inst.0[0..self.inst_size()].iter())
+                .enumerate()
+            {
                 if i2 != i {
                     println!("instances differ at position {}", idx)
                 }
             }
             false
-        }
-        else {
+        } else {
             true
         }
     }

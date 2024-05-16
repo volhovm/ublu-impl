@@ -21,7 +21,7 @@ pub fn key_lang<G: Group>(g: G, h_com: G) -> AlgLang<G> {
         ],
         vec![
             LinearPoly::zero(il),
-            LinearPoly::constant(il, g),
+            LinearPoly::constant(il, -g),
             LinearPoly::zero(il),
             LinearPoly::constant(il, h_com),
         ],
@@ -144,6 +144,7 @@ pub(crate) mod tests {
     use ark_std::UniformRand;
     use rand::thread_rng;
 
+    #[allow(non_snake_case)]
     #[test]
     fn test_key_lang() {
         let mut rng = thread_rng();
@@ -176,6 +177,7 @@ pub(crate) mod tests {
         assert!(ver.is_ok());
     }
 
+    #[allow(non_snake_case)]
     #[test]
     fn test_escrow_lang() {
         let mut rng = thread_rng();

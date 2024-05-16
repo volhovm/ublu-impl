@@ -77,7 +77,18 @@ impl<G: Group> AlgLang<G> {
         let inst2 = mul_mat_by_vec_g_f(&matrix, &wit.0);
         // we only compare the first inst_size elements of the instance,
         // the rest of the instance may be only needed for instantiate_matrix
-        inst2 == inst.0[0..self.inst_size()]
+
+        if inst2 != inst.0[0..self.inst_size()] {
+            for (idx, (i2,i)) in inst2.iter().zip(inst.0[0..self.inst_size()].iter()).enumerate() {
+                if i2 != i {
+                    println!("instances differ at position {}", idx)
+                }
+            }
+            false
+        }
+        else {
+            true
+        }
     }
 }
 

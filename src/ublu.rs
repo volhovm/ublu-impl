@@ -143,6 +143,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         for i in 1..=self.d {
             let base = -(t as i32);
             let cur_msg = base.pow(i as u32);
+            println!("curmsg {}", cur_msg);
             let cur_r = P::ScalarField::rand(rng);
             r_vec.push(cur_r);
             cipher_vec.push(self.elgamal.encrypt_raw(&pk, cur_msg, cur_r));
@@ -157,8 +158,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
         let proof_pk = {
             let lang = key_lang(self.g, self.com_h);
-            let inst = AlgInst(vec![pk.h, cipher_vec[1].b, com_t.com.value]); //B01
-            let wit = AlgWit(vec![sk.sk, P::ScalarField::from(t), r_vec[1], r_t]);
+            assert!(self.g * sk.sk == pk.h);
+            assert!(self.g * (-P::ScalarField::from(t)) + pk.h * r_vec[0] == cipher_vec[0].b);
+            let inst = AlgInst(vec![pk.h, cipher_vec[0].b, com_t.com.value]); //B01
+            let wit = AlgWit(vec![sk.sk, -P::ScalarField::from(t), r_vec[0], r_t]);
             assert!(lang.contains(&inst, &wit));
             let proof = SigmaProof::prove(&lang, &inst, &wit);
             PkProof { proof }

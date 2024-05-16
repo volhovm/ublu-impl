@@ -8,6 +8,7 @@ use ark_std::Zero;
 use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
+use crate::languages::{escrow_lang, trace_lang};
 use crate::{
     ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
@@ -17,7 +18,6 @@ use crate::{
     sigma::SigmaProof,
     utils::{binomial, field_pow},
 };
-use crate::languages::escrow_lang;
 
 #[allow(dead_code)]
 pub struct Ublu<P: Pairing, RNG: RngCore> {
@@ -42,14 +42,11 @@ pub struct PkProof<P: Pairing> {
 //TODO placeholder
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TagProof<P: Pairing> {
-    _phantom: std::marker::PhantomData<P>,
+    proof: SigmaProof<P::G1>,
 }
 impl<P: Pairing> From<SigmaProof<P::G1>> for TagProof<P> {
     fn from(_value: SigmaProof<P::G1>) -> Self {
-        // TODO
-        TagProof {
-            _phantom: std::marker::PhantomData,
-        }
+        TagProof { proof: _value }
     }
 }
 
@@ -219,7 +216,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         &mut self,
         pk: &PublicKey<P>,
         hint: &Hint<P>,
-        _old_tag: Option<&Tag<P>>,
+        old_tag: Option<&Tag<P>>,
         x: usize,
     ) -> (Hint<P>, Tag<P>) {
         let rnd = P::ScalarField::rand(&mut self.rng);
@@ -233,7 +230,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         assert!(pk_valid.is_ok());
 
         let new_hint = self.update_hint(pk, hint, x, &r_x);
-        let _cur_com = self
+        let cur_com = self
             .pedersen
             .commit_raw(&P::ScalarField::from(x as u64), &rnd);
         // TODO do the proofs
@@ -245,9 +242,31 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         // - pi_{t,0} does not exist, however we can assume pi_{t,0} is some constant "dummy" value,
         //  e.g. SigmaProof { vec![], vec![] }. Remember that we "bind" the previous
         // trace proof by absorbing it into the Fiat Shamir hash, so it can be anything.
-        let proof_t = SigmaProof {
-            a: vec![],
-            z: vec![],
+        let lang = trace_lang(self.g, self.com_h);
+
+        let old_proof_t = match old_tag.is_none() {
+            false => {
+                //TODO: should we check all previous tags before updating?
+                old_tag.unwrap().proof.proof.clone()
+            }
+            true => SigmaProof::<P::G1> {
+                a: vec![],
+                z: vec![],
+            },
+        };
+        let proof_t = {
+            assert_eq!(
+                hint.com_x.value + self.g * P::ScalarField::from(x as u64) + self.com_h * r_x,
+                new_hint.com_x.value
+            );
+            let inst = AlgInst(vec![
+                new_hint.com_x.value - hint.com_x.value,
+                cur_com.com.value,
+                pk.h,
+            ]); //
+            let wit = AlgWit(vec![P::ScalarField::from(x as u64), r_x, cur_com.rnd]);
+            assert!(lang.contains(&inst, &wit));
+            SigmaProof::sok(&lang, &inst, &wit, &old_proof_t)
         };
 
         let new_tag = Tag {
@@ -447,10 +466,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             for i in 1..=self.d {
                 prod_a += blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
                 prod_d += blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
-                prod_w += self.w[i - 1]  * (-P::ScalarField::from(self.stirling[i - 1]));
+                prod_w += self.w[i - 1] * (-P::ScalarField::from(self.stirling[i - 1]));
             }
-            assert_eq!(escrow_enc.a,prod_a*beta);
-            assert_eq!(escrow_enc.b,prod_d*beta + prod_w*(beta*alpha));
+            assert_eq!(escrow_enc.a, prod_a * beta);
+            assert_eq!(escrow_enc.b, prod_d * beta + prod_w * (beta * alpha));
             let inst = AlgInst(vec![
                 com_alpha.value,
                 com_beta.value,
@@ -486,9 +505,11 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let mut prod_d = P::G1::zero();
             let mut prod_w = P::G1::zero();
             for i in 1..=self.d {
-                prod_a += escrow.blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
-                prod_d += escrow.blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
-                prod_w += self.w[i - 1]  * (-P::ScalarField::from(self.stirling[i - 1]));
+                prod_a +=
+                    escrow.blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
+                prod_d +=
+                    escrow.blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+                prod_w += self.w[i - 1] * (-P::ScalarField::from(self.stirling[i - 1]));
             }
 
             let inst = AlgInst(vec![
@@ -499,7 +520,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 escrow.escrow_enc.b,
                 prod_a,
                 prod_d,
-                prod_w
+                prod_w,
             ]);
             escrow.proof_e.verify(&lang, &inst)
         };
@@ -508,11 +529,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         m == self.g
     }
 
-    fn evaluate(
-        &self,
-        old_ciphers: &[Cipher<P::G1>],
-        beta: P::ScalarField,
-    ) -> Cipher<P::G1> {
+    fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
         let mut e_1 = P::G1::zero();
         let mut e_2 = P::G1::zero();
         for i in 1..=self.d {
@@ -546,7 +563,7 @@ pub(crate) mod tests {
         // We only added 4, and the threshold is 5, so we should fail
         assert!(!ublu.decrypt(&sk, &escrow_1));
         // We add 2 more, so now we should succeed
-        let (hint_2, tag_2) = ublu.update(&pk, &hint_0, None, x);
+        let (hint_2, tag_2) = ublu.update(&pk, &hint_0, Some(&tag_1), x);
         let escrow_2 = ublu.escrow(&pk, &hint_2);
         assert!(ublu.decrypt(&sk, &escrow_2));
     }

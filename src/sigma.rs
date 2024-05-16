@@ -1,10 +1,11 @@
 use crate::ch20::{mul_mat_by_vec_g_f, AlgInst, AlgLang, AlgWit};
 use ark_ec::Group;
+use ark_serialize::CanonicalSerialize;
 use ark_std::UniformRand;
 use ark_transcript::Transcript;
 use rand::thread_rng;
 
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default, CanonicalSerialize)]
 pub struct SigmaProof<G: Group> {
     pub a: Vec<G>,
     pub z: Vec<G::ScalarField>,
@@ -16,12 +17,15 @@ pub enum SigmaVerifierError {
 }
 
 impl<G: Group> SigmaProof<G> {
-    pub fn prove(lang: &AlgLang<G>, inst: &AlgInst<G>, wit: &AlgWit<G>) -> SigmaProof<G>
-    where
-        G::ScalarField: UniformRand,
-    {
+    pub fn sok<O: CanonicalSerialize + ?Sized>(
+        lang: &AlgLang<G>,
+        inst: &AlgInst<G>,
+        wit: &AlgWit<G>,
+        msg: &O,
+    ) -> SigmaProof<G> {
         let mut t = Transcript::new(b"sigma_proof");
         t.append(&inst.0);
+        t.append(msg);
 
         let mut rng = thread_rng();
         let r: Vec<G::ScalarField> = (0..(lang.wit_size()))
@@ -35,9 +39,22 @@ impl<G: Group> SigmaProof<G> {
         SigmaProof { a, z }
     }
 
-    pub fn verify(&self, lang: &AlgLang<G>, inst: &AlgInst<G>) -> Result<(), SigmaVerifierError> {
+    pub fn prove(lang: &AlgLang<G>, inst: &AlgInst<G>, wit: &AlgWit<G>) -> SigmaProof<G>
+    where
+        G::ScalarField: UniformRand,
+    {
+        Self::sok(&lang, &inst, &wit, &G::zero())
+    }
+
+    pub fn verify_sig<O: CanonicalSerialize + ?Sized>(
+        &self,
+        lang: &AlgLang<G>,
+        inst: &AlgInst<G>,
+        msg: &O,
+    ) -> Result<(), SigmaVerifierError> {
         let mut t = Transcript::new(b"sigma_proof");
         t.append(&inst.0);
+        t.append(msg);
         t.append(&self.a);
         let chl: G::ScalarField = t.challenge(b"challenge").read_uniform();
         let matrix = lang.instantiate_matrix(&inst.0);
@@ -54,6 +71,9 @@ impl<G: Group> SigmaProof<G> {
             )));
         }
         Ok(())
+    }
+    pub fn verify(&self, lang: &AlgLang<G>, inst: &AlgInst<G>) -> Result<(), SigmaVerifierError> {
+        self.verify_sig(&lang, &inst, &G::zero())
     }
 }
 

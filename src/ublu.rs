@@ -8,7 +8,6 @@ use ark_std::Zero;
 use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
-use crate::languages::{escrow_gen_inst_from_wit, escrow_gen_wit, escrow_lang};
 use crate::{
     ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
@@ -18,6 +17,7 @@ use crate::{
     sigma::SigmaProof,
     utils::{binomial, field_pow},
 };
+use crate::languages::escrow_lang;
 
 #[allow(dead_code)]
 pub struct Ublu<P: Pairing, RNG: RngCore> {
@@ -421,7 +421,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let com_beta = self.pedersen.commit_raw(&beta, &r_beta).com;
 
         let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
-        let escrow_enc = self.evaluate(&hint.ciphers, beta, alpha);
+        let escrow_enc = self.evaluate(&hint.ciphers, beta);
 
         // TODO placeholder for test
         let proof_c = CH20Proof {
@@ -437,10 +437,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let mut prod_d = P::G1::zero();
             let mut prod_w = P::G1::zero();
             for i in 1..=self.d {
-                prod_a += hint.ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
-                prod_d += hint.ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
-                prod_w += self.w[i - 1]
+                prod_a += blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
+                prod_d += blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+                prod_w += self.w[i - 1]  * (-P::ScalarField::from(self.stirling[i - 1]));
             }
+            assert_eq!(escrow_enc.a,prod_a*beta);
+            assert_eq!(escrow_enc.b,prod_d*beta + prod_w*(beta*alpha));
             let inst = AlgInst(vec![
                 com_alpha.value,
                 com_beta.value,
@@ -469,6 +471,31 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     pub fn decrypt(&self, sk: &SecretKey<P>, escrow: &Escrow<P>) -> bool {
         let e_1 = escrow.escrow_enc.a;
         let e_2 = escrow.escrow_enc.b;
+        // Verify escrow proof
+        let e_valid = {
+            let lang = escrow_lang(self.g, self.com_h);
+            let mut prod_a = P::G1::zero();
+            let mut prod_d = P::G1::zero();
+            let mut prod_w = P::G1::zero();
+            for i in 1..=self.d {
+                prod_a += escrow.blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
+                prod_d += escrow.blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+                prod_w += self.w[i - 1]  * (-P::ScalarField::from(self.stirling[i - 1]));
+            }
+
+            let inst = AlgInst(vec![
+                escrow.com_alpha.value,
+                escrow.com_beta.value,
+                P::G1::zero(),
+                escrow.escrow_enc.a,
+                escrow.escrow_enc.b,
+                prod_a,
+                prod_d,
+                prod_w
+            ]);
+            escrow.proof_e.verify(&lang, &inst)
+        };
+        assert!(e_valid.is_ok());
         let m = e_2 - e_1 * sk.elgamal_sk.sk;
         m == self.g
     }
@@ -477,14 +504,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         &self,
         old_ciphers: &[Cipher<P::G1>],
         beta: P::ScalarField,
-        alpha: P::ScalarField,
     ) -> Cipher<P::G1> {
         let mut e_1 = P::G1::zero();
         let mut e_2 = P::G1::zero();
         for i in 1..=self.d {
             e_1 += old_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
             e_2 += old_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
-            e_2 += self.w[i - 1] * alpha
         }
         e_1 *= beta;
         e_2 *= beta;

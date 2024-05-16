@@ -224,6 +224,14 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     ) -> (Hint<P>, Tag<P>) {
         let rnd = P::ScalarField::rand(&mut self.rng);
         let r_x = P::ScalarField::rand(&mut self.rng);
+
+        let pk_valid = {
+            let lang = key_lang(self.g, self.com_h);
+            let inst = AlgInst(vec![pk.h, hint.ciphers[0].b, pk.com_t.value]);
+            pk.proof_pk.proof.verify(&lang, &inst)
+        };
+        assert!(pk_valid.is_ok());
+
         let new_hint = self.update_hint(pk, hint, x, &r_x);
         let _cur_com = self
             .pedersen

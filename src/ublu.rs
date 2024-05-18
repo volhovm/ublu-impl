@@ -213,8 +213,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         hint: &Hint<P>,
         old_tag: &Option<Tag<P>>,
         x: usize,
+        r_got: P::ScalarField,
     ) -> (Hint<P>, Tag<P>) {
-        let rnd = P::ScalarField::rand(&mut self.rng);
         let r_x = P::ScalarField::rand(&mut self.rng);
 
         let pk_valid = {
@@ -227,7 +227,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let new_hint = self.update_hint(pk, hint, x, &r_x);
         let cur_com = self
             .pedersen
-            .commit_raw(&P::ScalarField::from(x as u64), &rnd);
+            .commit_raw(&P::ScalarField::from(x as u64), &r_got);
         // TODO do the proofs
 
         // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
@@ -259,7 +259,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 cur_com.com.value,
                 pk.h,
             ]); //
-            let wit = AlgWit(vec![P::ScalarField::from(x as u64), r_x, cur_com.rnd]);
+            let wit = AlgWit(vec![P::ScalarField::from(x as u64), r_x, r_got]);
             assert!(lang.contains(&inst, &wit));
             SigmaProof::sok(&lang, &inst, &wit, &old_proof_t)
         };
@@ -312,17 +312,17 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .chain(self.w.clone())
                 .collect();
 
-            let old_ciphers: Vec<_> = old_hint
+            let flat_old_ciphers: Vec<P::G1> = old_hint
                 .ciphers
                 .clone()
                 .into_iter()
-                .flat_map(|c| [])
+                .flat_map(|Cipher { a, b }| vec![a, b])
                 .collect();
 
             let inst_core = AlgInst(
-                vec![pk.com_t.value, old_hint.com_x.value, P::G1::zero()]
+                vec![pk.com_t.value, old_hint.com_x.value]
                     .into_iter()
-                    .chain(old_ciphers)
+                    .chain(flat_old_ciphers)
                     .chain(vec![P::G1::zero(); self.d])
                     .collect(),
             );
@@ -337,16 +337,9 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 r_i_list.clone(),
             );
 
-            /* commented out be felix, not yet working (Cannot multiply 32x64 matrix by a 45 vector)
-            let proof_c_new =
-                old_hint
-                    .proof_c
-                    .update(&self.ch20, &lang_core, &inst_core, &trans_core);
-            */
-            CH20Proof {
-                a: Vec::new(),
-                d: Vec::new(),
-            }
+            old_hint
+                .proof_c
+                .update(&self.ch20crs, &lang_core, &inst_core, &trans_core)
         };
 
         Hint {
@@ -527,7 +520,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         m == P::G1::zero()
     }
 
-    pub fn verify_key_gen(&mut self, t: u32, pk: PublicKey<P>, hint0: Hint<P>) -> bool {
+    pub fn verify_key_gen(&self, pk: PublicKey<P>, hint0: Hint<P>) -> bool {
         if hint0.com_x.value != P::G1::zero() {
             println!("Issue1");
             return false;
@@ -546,7 +539,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .chain(self.w.clone())
                 .collect();
 
-            let acal = P::G1::zero();
             let xcal = P::G1::zero();
 
             let ab_s: Vec<P::G1> = hint0
@@ -556,17 +548,15 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .flat_map(|Cipher { a, b }| vec![a, b])
                 .collect();
 
-            let inst = AlgInst(
-                vec![pk.com_t.value, xcal, acal]
+            let inst_core = AlgInst(
+                vec![pk.com_t.value, xcal]
                     .into_iter()
                     .chain(ab_s)
-                    .chain(vec![P::G1::zero(); self.d + 1])
+                    .chain(vec![P::G1::zero(); self.d])
                     .collect(),
             );
 
             let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
-
-            let inst_core = consistency::consistency_inst_to_core(self.d, &inst);
 
             if hint0
                 .proof_c
@@ -581,9 +571,39 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         true
     }
 
-    pub fn verify_history() {}
+    pub fn verify_history(&self, _pk: PublicKey<P>, _history: Vec<(Tag<P>, Comm<P::G1>)>) -> bool {
+        true
+    }
 
-    pub fn verify_hint() {}
+    pub fn verify_hint(&self, pk: PublicKey<P>, hint: Hint<P>, tag: Tag<P>) -> bool {
+        let hs: Vec<P::G1> = [self.com_h, pk.h]
+            .into_iter()
+            .chain(self.w.clone())
+            .collect();
+
+        let acal = P::G1::zero();
+
+        let ab_s: Vec<P::G1> = hint
+            .ciphers
+            .clone()
+            .into_iter()
+            .flat_map(|Cipher { a, b }| vec![a, b])
+            .collect();
+
+        let inst_core = AlgInst(
+            vec![pk.com_t.value, tag.com.value]
+                .into_iter()
+                .chain(ab_s)
+                .chain(vec![P::G1::zero(); self.d])
+                .collect(),
+        );
+
+        let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
+
+        hint.proof_c
+            .verify(&self.ch20crs, &lang_core, &inst_core)
+            .is_ok()
+    }
 
     pub fn verify_escrow() {}
 
@@ -603,27 +623,31 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::Ublu;
+    use crate::CF;
     use aes_prng::AesRng;
     use ark_bls12_381::Bls12_381;
+    use ark_ff::UniformRand;
     use rand::SeedableRng;
 
     #[test]
     fn sunshine() {
+        let mut rng = AesRng::seed_from_u64(1);
         let lambda = 40;
         let d = 10;
         let t = 3;
         let x: usize = 2;
         let x_update: usize = 3;
-        let rng = AesRng::seed_from_u64(1);
-        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
+
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
         let (pk, sk, mut hint_pre) = ublu.key_gen(t);
         let mut tag_pre = None;
-        let (mut hint_cur, mut tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x);
+        let r_got = CF::rand(&mut rng);
+        let (mut hint_cur, mut tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
         let mut escrow = ublu.escrow(&pk, &hint_cur);
         assert!(!ublu.decrypt(&sk, &escrow));
         let mut i = 0;
         while !ublu.decrypt(&sk, &escrow) && i < d {
-            (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x_update);
+            (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x_update, r_got);
             escrow = ublu.escrow(&pk, &hint_cur);
             hint_pre = hint_cur.clone();
             tag_pre = Some(tag_cur.clone());
@@ -642,13 +666,31 @@ pub(crate) mod tests {
 
     #[test]
     fn test_verify_key_gen() {
+        let rng = AesRng::seed_from_u64(1);
         let lambda = 40;
         let d = 10;
         let t = 3;
         let x: usize = 5;
-        let rng = AesRng::seed_from_u64(1);
+
         let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
         let (pk, _sk, hint0) = ublu.key_gen(t);
-        assert!(ublu.verify_key_gen(t, pk, hint0));
+        assert!(ublu.verify_key_gen(pk, hint0));
+    }
+
+    #[test]
+    fn test_verify_hint() {
+        let mut rng = AesRng::seed_from_u64(1);
+        let lambda = 40;
+        let d = 10;
+        let t = 3;
+        let x: usize = 2;
+        let x_update: usize = 3;
+
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
+        let (pk, sk, hint_pre) = ublu.key_gen(t);
+        let tag_pre = None;
+        let r_got = CF::rand(&mut rng);
+        let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
+        assert!(ublu.verify_hint(pk, hint_cur, tag_cur));
     }
 }

@@ -416,6 +416,20 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         field_pow(x, i - j) * P::ScalarField::from(binomial(i, j) as u64)
     }
 
+    fn randomize_ciphers(
+        &self,
+        old_ciphers: &[Cipher<P::G1>],
+        r_i_list: &Vec<P::ScalarField>,
+        pk_h: P::G1,
+    ) -> Vec<Cipher<P::G1>> {
+        let mut new_ciphers: Vec<_> = old_ciphers.to_vec();
+        for i in 0..new_ciphers.len() {
+            new_ciphers[i].a += self.g * r_i_list[i];
+            new_ciphers[i].b += pk_h * r_i_list[i];
+        }
+        new_ciphers
+    }
+
     fn blind_powers(
         &self,
         old_ciphers: &[Cipher<P::G1>],
@@ -438,8 +452,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let com_alpha = self.pedersen.commit_raw(&alpha, &r_alpha).com;
         let com_beta = self.pedersen.commit_raw(&beta, &r_beta).com;
 
-        let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
-        let escrow_enc = self.evaluate(&hint.ciphers, beta);
+        let r_i_list: Vec<_> = (0..self.d)
+            .map(|_| P::ScalarField::rand(&mut self.rng))
+            .collect();
+        let rerand_ciphers = self.randomize_ciphers(&hint.ciphers, &r_i_list, pk.h);
+        let blinded_ciphers = self.blind_powers(&rerand_ciphers, alpha);
+        let escrow_enc = self.evaluate(&rerand_ciphers, beta);
 
         let proof_c: CH20Proof<P> = {
             let hs: Vec<P::G1> = [self.com_h, pk.h]
@@ -466,15 +484,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let proof_gen = consistency::generalise_proof(self.d, hint.proof_c.clone());
             let lang_full = consistency::consistency_lang(self.g, &hs, self.d);
 
-            // TODO rerandomise!
-            let trans_blind: CH20Trans<P::G1> = consistency::consistency_blind_trans(
-                self.g,
-                &hs,
-                self.d,
-                vec![P::ScalarField::zero(); self.d],
-                alpha,
-                r_alpha,
-            );
+            let trans_blind: CH20Trans<P::G1> =
+                consistency::consistency_blind_trans(self.g, &hs, self.d, r_i_list, alpha, r_alpha);
 
             proof_gen.update(&self.ch20crs, &lang_full, &inst_gen, &trans_blind)
         };

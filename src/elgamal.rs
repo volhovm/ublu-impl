@@ -2,7 +2,7 @@ use ark_ec::Group;
 use ark_ff::UniformRand;
 use rand::RngCore;
 
-pub const MAX_TRIES: u32 = 10000;
+pub const MAX_TRIES: u32 = 100;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElgamalParams<G: Group> {

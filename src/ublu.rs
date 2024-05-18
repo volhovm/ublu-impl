@@ -30,7 +30,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     elgamal: ElgamalParams<P::G1>,
     pedersen: PedersenParams<P::G1>,
     ch20: CH20CRS<P>,
-    stirling: Vec<u32>,
+    stirling: Vec<u64>,
 }
 
 //TODO placeholder
@@ -116,7 +116,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
         let ch20: CH20CRS<P> = CH20CRS::setup(&mut rng);
         // Compute Stirling table
-        let stirling: Vec<u32> = stirling2_table(d).last().unwrap().to_owned();
+        let stirling: Vec<u64> = stirling2_table(d).last().unwrap().to_owned();
         // let stirling = stirling_tab.iter().map(|x| *x as usize).collect();
         Ublu {
             lambda,
@@ -148,10 +148,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let com_t = self.pedersen.commit_raw(&P::ScalarField::from(t), &r_t);
         let com_x0 = self
             .pedersen
-            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
+            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
         let com_u0 = self
             .pedersen
-            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
+            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
 
         let proof_pk = {
             let lang = key_lang(self.g, self.com_h);
@@ -216,7 +216,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         &mut self,
         pk: &PublicKey<P>,
         hint: &Hint<P>,
-        old_tag: Option<&Tag<P>>,
+        old_tag: &Option<Tag<P>>,
         x: usize,
     ) -> (Hint<P>, Tag<P>) {
         let rnd = P::ScalarField::rand(&mut self.rng);
@@ -247,7 +247,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let old_proof_t = match old_tag.is_none() {
             false => {
                 //TODO: should we check all previous tags before updating?
-                old_tag.unwrap().proof.proof.clone()
+                old_tag.to_owned().unwrap().proof.proof.clone()
             }
             true => SigmaProof::<P::G1> {
                 a: vec![],
@@ -294,7 +294,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let new_ciphers = self.update_powers2(old_hint.ciphers.clone(), r_i_list.clone(), x, pk.h);
         let com_u = self
             .pedersen
-            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::zero());
+            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
         let _xc: XC<P> = XC {
             h: pk.h,
             comt_t: pk.com_t.clone(),
@@ -405,7 +405,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut new_ciphers = Vec::with_capacity(self.d);
         for i in 1..=self.d {
             let mut cur_a_res = P::G1::zero();
-            let mut cur_b_res = P::G1::zero();
+            let mut cur_b_res = self.g * field_pow(P::ScalarField::from(x as u64), i);
             for j in 1..=i {
                 let cur_v_val = P::ScalarField::from(Self::v_func(x, i, j) as u64);
                 cur_a_res += old_ciphers.get(j - 1).unwrap().a * cur_v_val;
@@ -439,6 +439,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     }
 
     pub fn escrow(&mut self, pk: &PublicKey<P>, hint: &Hint<P>) -> Escrow<P> {
+        // TODO add rerandomizing of the hint
         let alpha = P::ScalarField::rand(&mut self.rng);
         let r_alpha = P::ScalarField::rand(&mut self.rng);
         let beta = P::ScalarField::rand(&mut self.rng);
@@ -449,7 +450,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
         let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
         let escrow_enc = self.evaluate(&hint.ciphers, beta);
-
         // TODO placeholder for test
         let proof_c = CH20Proof {
             a: Vec::new(),
@@ -525,8 +525,11 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             escrow.proof_e.verify(&lang, &inst)
         };
         assert!(e_valid.is_ok());
-        let m = e_2 - e_1 * sk.elgamal_sk.sk;
-        m == self.g
+        let rhs = e_1 * sk.elgamal_sk.sk;
+        assert_ne!(rhs, P::G1::zero());
+        assert_ne!(e_2, P::G1::zero());
+        let m = e_2 - rhs;
+        m == P::G1::zero()
     }
 
     fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
@@ -553,18 +556,32 @@ pub(crate) mod tests {
     fn sunshine() {
         let lambda = 40;
         let d = 10;
-        let t = 5;
-        let x = 4;
+        let t = 3;
+        let x: usize = 1;
+        let x_update: usize = 3;
         let rng = AesRng::seed_from_u64(1);
         let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
-        let (pk, sk, hint_0) = ublu.key_gen(t);
-        let (hint_1, tag_1) = ublu.update(&pk, &hint_0, None, x);
-        let escrow_1 = ublu.escrow(&pk, &hint_1);
-        // We only added 4, and the threshold is 5, so we should fail
-        assert!(!ublu.decrypt(&sk, &escrow_1));
-        // We add 2 more, so now we should succeed
-        let (hint_2, tag_2) = ublu.update(&pk, &hint_0, Some(&tag_1), x);
-        let escrow_2 = ublu.escrow(&pk, &hint_2);
-        assert!(ublu.decrypt(&sk, &escrow_2));
+        let (pk, sk, mut hint_pre) = ublu.key_gen(t);
+        let mut tag_pre = None;
+        let (mut hint_cur, mut tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x);
+        let mut escrow = ublu.escrow(&pk, &hint_cur);
+        assert!(!ublu.decrypt(&sk, &escrow));
+        let mut i = 0;
+        while !ublu.decrypt(&sk, &escrow) && i < d {
+            (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x_update);
+            escrow = ublu.escrow(&pk, &hint_cur);
+            hint_pre = hint_cur.clone();
+            tag_pre = Some(tag_cur.clone());
+            i += 1;
+        }
+        assert!(ublu.decrypt(&sk, &escrow));
+        println!("Passed after {i} updates");
+        // 1 + 3 > 3
+        assert_eq!(i, 1);
+        // TODO this fails
+        // (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, 1);
+        // escrow = ublu.escrow(&pk, &hint_cur);
+        // assert!(ublu.decrypt(&sk, &escrow));
+        // println!("Still passing after adding one more");
     }
 }

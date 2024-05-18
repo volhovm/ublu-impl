@@ -217,51 +217,53 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     ) -> (Hint<P>, Tag<P>) {
         let r_x = P::ScalarField::rand(&mut self.rng);
 
-        let pk_valid = {
+        // @volhovm: we don't need to check any proofs in update according to our semantics
+        // This proof is not supposed to pass w.r.t. hint_i, only w.r.t. hint_0.
+        if old_tag.is_none() {
             let lang = key_lang(self.g, self.com_h);
             let inst = AlgInst(vec![pk.h, hint.ciphers[0].b, pk.com_t.value]);
-            pk.proof_pk.proof.verify(&lang, &inst)
+            assert!(pk.proof_pk.proof.verify(&lang, &inst).is_ok());
         };
-        assert!(pk_valid.is_ok());
 
         let new_hint = self.update_hint(pk, hint, x, &r_x);
-        let cur_com = self
+        // external commitment, gothic C
+        let ext_com = self
             .pedersen
             .commit_raw(&P::ScalarField::from(x as u64), &r_got);
         // TODO do the proofs
 
-        // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
-        //
-        // volhovm:
-        // - calX_0 is generated in KeyGen
-        // - pi_{t,0} does not exist, however we can assume pi_{t,0} is some constant "dummy" value,
-        //  e.g. SigmaProof { vec![], vec![] }. Remember that we "bind" the previous
-        // trace proof by absorbing it into the Fiat Shamir hash, so it can be anything.
-        let lang = trace_lang(self.g, self.com_h);
-
-        let old_proof_t = match old_tag.is_none() {
-            false => {
-                //TODO: should we check all previous tags before updating?
-                old_tag.to_owned().unwrap().proof.proof.clone()
-            }
-            true => SigmaProof::<P::G1> {
-                a: vec![],
-                z: vec![],
-            },
-        };
         let proof_t = {
+            // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
+            //
+            // volhovm:
+            // - calX_0 is generated in KeyGen
+            // - pi_{t,0} does not exist, however we can assume pi_{t,0} is some constant "dummy" value,
+            //  e.g. SigmaProof { vec![], vec![] }. Remember that we "bind" the previous
+            // trace proof by absorbing it into the Fiat Shamir hash, so it can be anything.
+            let lang = trace_lang(self.g, self.com_h);
+
             assert_eq!(
                 hint.com_x.value + self.g * P::ScalarField::from(x as u64) + self.com_h * r_x,
                 new_hint.com_x.value
             );
             let inst = AlgInst(vec![
                 new_hint.com_x.value - hint.com_x.value,
-                cur_com.com.value,
+                ext_com.com.value,
                 pk.h,
-            ]); //
+            ]);
             let wit = AlgWit(vec![P::ScalarField::from(x as u64), r_x, r_got]);
             assert!(lang.contains(&inst, &wit));
-            SigmaProof::sok(&lang, &inst, &wit, &old_proof_t)
+
+            match old_tag.is_none() {
+                false => {
+                    let prev_proof = &old_tag.to_owned().unwrap().proof.proof;
+                    SigmaProof::sok(&lang, &inst, &wit, prev_proof)
+                }
+                true => {
+                    let prev_proof = &pk.proof_pk.proof;
+                    SigmaProof::sok(&lang, &inst, &wit, prev_proof)
+                }
+            }
         };
 
         let new_tag = Tag {
@@ -571,7 +573,28 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         true
     }
 
-    pub fn verify_history(&self, _pk: PublicKey<P>, _history: Vec<(Tag<P>, Comm<P::G1>)>) -> bool {
+    pub fn verify_history(&self, pk: PublicKey<P>, history: Vec<(Tag<P>, Comm<P::G1>)>) -> bool {
+        let mut old_com_x = P::G1::zero();
+        for (i, (tag_i, com_i)) in history.iter().enumerate() {
+            let lang = trace_lang(self.g, self.com_h);
+            let inst = AlgInst(vec![tag_i.com.value - old_com_x, com_i.value, pk.h]);
+            let proof = &tag_i.proof.proof;
+
+            if i == 0 {
+                if proof.verify_sig(&lang, &inst, &pk.proof_pk.proof).is_err() {
+                    println!("First proof failed");
+                    return false;
+                }
+            } else if proof
+                .verify_sig(&lang, &inst, &history[i - 1].0.proof.proof)
+                .is_err()
+            {
+                println!("Proof #{i:?} failed");
+                return false;
+            }
+
+            old_com_x = tag_i.com.value;
+        }
         true
     }
 
@@ -622,8 +645,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::Ublu;
-    use crate::CF;
+    use super::{Tag, Ublu};
+    use crate::{commitment::Comm, CC, CF, CG1};
     use aes_prng::AesRng;
     use ark_bls12_381::Bls12_381;
     use ark_ff::UniformRand;
@@ -692,5 +715,40 @@ pub(crate) mod tests {
         let r_got = CF::rand(&mut rng);
         let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
         assert!(ublu.verify_hint(pk, hint_cur, tag_cur));
+    }
+
+    #[test]
+    fn test_verify_history() {
+        let mut rng = AesRng::seed_from_u64(1);
+        let lambda = 40;
+        let d = 10;
+        let t = 3;
+        let x: usize = 2;
+        let x_update: usize = 3;
+
+        // Gothic rs for external commitments
+        let mut r_got_vec: Vec<CF> = vec![];
+        let mut hints: Vec<_> = vec![];
+        let mut history: Vec<(Tag<CC>, Comm<CG1>)> = vec![];
+
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
+        let (pk, sk, hint0) = ublu.key_gen(t);
+        hints.push(hint0);
+
+        for i in 0..10 {
+            let r_got = CF::rand(&mut rng);
+            let prev_tag: &Option<Tag<CC>> = &history.last().map(|(tag, _)| tag.clone());
+            let (hint, tag) = ublu.update(&pk, hints.last().unwrap(), prev_tag, x_update, r_got);
+            let ext_com = ublu
+                .pedersen
+                .commit_raw(&CF::from(x_update as u64), &r_got)
+                .com;
+
+            r_got_vec.push(r_got);
+            hints.push(hint);
+            history.push((tag, ext_com));
+        }
+
+        assert!(ublu.verify_history(pk, history));
     }
 }

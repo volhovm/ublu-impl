@@ -440,11 +440,45 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
         let blinded_ciphers = self.blind_powers(&hint.ciphers, alpha);
         let escrow_enc = self.evaluate(&hint.ciphers, beta);
-        // TODO placeholder for test
-        let proof_c = CH20Proof {
-            a: Vec::new(),
-            d: Vec::new(),
+
+        let proof_c: CH20Proof<P> = {
+            let hs: Vec<P::G1> = [self.com_h, pk.h]
+                .into_iter()
+                .chain(self.w.clone())
+                .collect();
+
+            let flat_old_ciphers: Vec<P::G1> = hint
+                .ciphers
+                .clone()
+                .into_iter()
+                .flat_map(|Cipher { a, b }| vec![a, b])
+                .collect();
+
+            let inst_core = AlgInst(
+                vec![pk.com_t.value, hint.com_x.value]
+                    .into_iter()
+                    .chain(flat_old_ciphers)
+                    .chain(vec![P::G1::zero(); self.d])
+                    .collect(),
+            );
+            let inst_gen = consistency::generalise_inst(self.d, inst_core);
+
+            let proof_gen = consistency::generalise_proof(self.d, hint.proof_c.clone());
+            let lang_full = consistency::consistency_lang(self.g, &hs, self.d);
+
+            // TODO rerandomise!
+            let trans_blind: CH20Trans<P::G1> = consistency::consistency_blind_trans(
+                self.g,
+                &hs,
+                self.d,
+                vec![P::ScalarField::zero(); self.d],
+                alpha,
+                r_alpha,
+            );
+
+            proof_gen.update(&self.ch20crs, &lang_full, &inst_gen, &trans_blind)
         };
+
         let proof_e = {
             let lang = escrow_lang(self.g, self.com_h);
             let betaalpha = beta * alpha;
@@ -628,7 +662,46 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .is_ok()
     }
 
-    pub fn verify_escrow() {}
+    pub fn verify_escrow(&self, pk: PublicKey<P>, escrow: Escrow<P>, tag: Tag<P>) -> bool {
+        if tag.com != escrow.com_x {
+            return false;
+        }
+
+        {
+            let hs: Vec<P::G1> = [self.com_h, pk.h]
+                .into_iter()
+                .chain(self.w.clone())
+                .collect();
+
+            let ab_s: Vec<P::G1> = escrow
+                .blinded_ciphers
+                .clone()
+                .into_iter()
+                .flat_map(|Cipher { a, b }| vec![a, b])
+                .collect();
+
+            let inst_full = AlgInst(
+                vec![pk.com_t.value, tag.com.value, escrow.com_alpha.value]
+                    .into_iter()
+                    .chain(ab_s)
+                    .chain(vec![P::G1::zero(); self.d + 1])
+                    .collect(),
+            );
+
+            let lang_full = consistency::consistency_lang(self.g, &hs, self.d);
+
+            if escrow
+                .proof_c
+                .verify(&self.ch20crs, &lang_full, &inst_full)
+                .is_err()
+            {
+                println!("Consistency proof failed");
+                return false;
+            }
+        }
+
+        true
+    }
 
     fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
         let mut e_1 = P::G1::zero();
@@ -750,5 +823,24 @@ pub(crate) mod tests {
         }
 
         assert!(ublu.verify_history(pk, history));
+    }
+
+    #[test]
+    fn test_verify_escrow() {
+        let mut rng = AesRng::seed_from_u64(1);
+        let lambda = 40;
+        let d = 10;
+        let t = 3;
+        let x: usize = 2;
+        let x_update: usize = 3;
+
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
+        let (pk, sk, hint_pre) = ublu.key_gen(t);
+        let tag_pre = None;
+        let r_got = CF::rand(&mut rng);
+        let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
+        let escrow = ublu.escrow(&pk, &hint_cur);
+
+        assert!(ublu.verify_escrow(pk, escrow, tag_cur));
     }
 }

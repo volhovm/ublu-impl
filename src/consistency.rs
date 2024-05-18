@@ -420,22 +420,36 @@ pub fn consistency_core_trans_rand<G: Group, RNG: RngCore>(
     consistency_core_trans(g, hs, d, u_x, u_rx, u_rs)
 }
 
+pub fn consistency_blind_trans<G: Group>(
+    g: G,
+    hs: &[G],
+    d: usize,
+    u_rs: Vec<G::ScalarField>,
+    u_alpha: G::ScalarField,
+    u_ralpha: G::ScalarField,
+) -> CH20Trans<G> {
+    let u_x: G::ScalarField = Zero::zero();
+    let u_rx: G::ScalarField = Zero::zero();
+    consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha)
+}
+
 pub fn consistency_blind_trans_rand<G: Group, RNG: RngCore>(
     g: G,
     hs: &[G],
     d: usize,
     rng: &mut RNG,
 ) -> CH20Trans<G> {
-    let u_x: G::ScalarField = Zero::zero();
-    let u_rx: G::ScalarField = Zero::zero();
     let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
     let u_alpha: G::ScalarField = UniformRand::rand(rng);
     let u_ralpha: G::ScalarField = UniformRand::rand(rng);
-    consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha)
+    consistency_blind_trans(g, hs, d, u_rs, u_alpha, u_ralpha)
 }
 
 /// Generalises "core" proof to a "generic" one. To be used before blinding.
 pub fn generalise_proof<P: Pairing>(d: usize, proof: CH20Proof<P>) -> CH20Proof<P> {
+    assert!(proof.a.len() == 3 * d + 2);
+    assert!(proof.d.len() == 2 * d + 4);
+
     let mut proof = proof.clone();
 
     proof.a.insert(2, P::G1::zero());
@@ -446,11 +460,16 @@ pub fn generalise_proof<P: Pairing>(d: usize, proof: CH20Proof<P>) -> CH20Proof<
     proof.d.insert(7, P::G2::zero());
     proof.d.insert(8, P::G2::zero());
 
+    assert!(proof.a.len() == 3 * d + 4);
+    assert!(proof.d.len() == 2 * d + 8);
+
     proof
 }
 
 /// Same as `generalise_proof` but for instance.
 pub fn generalise_inst<G: Group>(d: usize, inst: AlgInst<G>) -> AlgInst<G> {
+    assert!(inst.0.len() == 3 * d + 2);
+
     let mut inst = inst.clone();
 
     inst.0.insert(2, G::zero());

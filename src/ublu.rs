@@ -8,13 +8,12 @@ use ark_std::Zero;
 use rand::RngCore;
 use stirling_numbers::stirling2_table;
 
-use crate::languages::{escrow_lang, trace_lang};
 use crate::{
     ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
     consistency,
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
-    languages::key_lang,
+    languages::{escrow_lang, key_lang, trace_lang},
     sigma::SigmaProof,
     utils::{binomial, field_pow},
 };
@@ -29,7 +28,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     w: Vec<P::G1>,
     elgamal: ElgamalParams<P::G1>,
     pedersen: PedersenParams<P::G1>,
-    ch20: CH20CRS<P>,
+    ch20crs: CH20CRS<P>,
     stirling: Vec<u64>,
 }
 
@@ -125,7 +124,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             w,
             elgamal: ElgamalParams { g },
             pedersen: PedersenParams { g, h: com_h },
-            ch20,
+            ch20crs: ch20,
             com_h,
             rng,
             stirling,
@@ -137,13 +136,13 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let (sk, pk) = self.elgamal.key_gen(rng);
         let r_t = P::ScalarField::rand(rng);
         let mut r_vec = Vec::with_capacity(t as usize);
-        let mut cipher_vec = Vec::with_capacity(t as usize);
+        let mut ciphers = Vec::with_capacity(t as usize);
         for i in 1..=self.d {
             let base = -(t as i32);
             let cur_msg = base.pow(i as u32);
             let cur_r = P::ScalarField::rand(rng);
             r_vec.push(cur_r);
-            cipher_vec.push(self.elgamal.encrypt_raw(&pk, cur_msg, cur_r));
+            ciphers.push(self.elgamal.encrypt_raw(&pk, cur_msg, cur_r));
         }
         let com_t = self.pedersen.commit_raw(&P::ScalarField::from(t), &r_t);
         let com_x0 = self
@@ -155,7 +154,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
         let proof_pk = {
             let lang = key_lang(self.g, self.com_h);
-            let inst = AlgInst(vec![pk.h, cipher_vec[0].b, com_t.com.value]); //B01
+            let inst = AlgInst(vec![pk.h, ciphers[0].b, com_t.com.value]); //B01
             let wit = AlgWit(vec![sk.sk, P::ScalarField::from(t), r_vec[0], r_t]);
             assert!(lang.contains(&inst, &wit));
             let proof = SigmaProof::prove(&lang, &inst, &wit);
@@ -167,7 +166,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let r_x: P::ScalarField = From::from(0u64);
             let alpha: P::ScalarField = From::from(0u64);
             let r_alpha: P::ScalarField = From::from(0u64);
-            let rs: Vec<P::ScalarField> = (0..self.d).map(|_i| From::from(0u64)).collect();
 
             let hs: Vec<P::G1> = [self.com_h, pk.h]
                 .into_iter()
@@ -182,7 +180,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 r_x,
                 alpha,
                 r_alpha,
-                rs,
+                r_vec.clone(),
             );
             let inst = consistency::consistency_wit_to_inst(self.g, &hs, self.d, &wit);
 
@@ -191,10 +189,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let inst_core = consistency::consistency_inst_to_core(self.d, &inst);
             let wit_core = consistency::consistency_wit_to_core(&wit);
 
-            let proof: CH20Proof<P> =
-                CH20Proof::prove(&self.ch20, &lang_core, &inst_core, &wit_core);
-
-            proof
+            CH20Proof::prove(&self.ch20crs, &lang_core, &inst_core, &wit_core)
         };
 
         (
@@ -205,7 +200,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             },
             SecretKey { elgamal_sk: sk },
             Hint {
-                ciphers: cipher_vec,
+                ciphers,
                 com_x: com_x0.com,
                 proof_c,
             },
@@ -532,6 +527,66 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         m == P::G1::zero()
     }
 
+    pub fn verify_key_gen(&mut self, t: u32, pk: PublicKey<P>, hint0: Hint<P>) -> bool {
+        if hint0.com_x.value != P::G1::zero() {
+            println!("Issue1");
+            return false;
+        };
+        {
+            let lang = key_lang(self.g, self.com_h);
+            let inst = AlgInst(vec![pk.h, hint0.ciphers[0].b, pk.com_t.value]);
+            if pk.proof_pk.proof.verify(&lang, &inst).is_err() {
+                println!("Issue2");
+                return false;
+            }
+        };
+        {
+            let hs: Vec<P::G1> = [self.com_h, pk.h]
+                .into_iter()
+                .chain(self.w.clone())
+                .collect();
+
+            let acal = P::G1::zero();
+            let xcal = P::G1::zero();
+
+            let ab_s: Vec<P::G1> = hint0
+                .ciphers
+                .clone()
+                .into_iter()
+                .flat_map(|Cipher { a, b }| vec![a, b])
+                .collect();
+
+            let inst = AlgInst(
+                vec![pk.com_t.value, xcal, acal]
+                    .into_iter()
+                    .chain(ab_s)
+                    .chain(vec![P::G1::zero(); self.d + 1])
+                    .collect(),
+            );
+
+            let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
+
+            let inst_core = consistency::consistency_inst_to_core(self.d, &inst);
+
+            if hint0
+                .proof_c
+                .verify(&self.ch20crs, &lang_core, &inst_core)
+                .is_err()
+            {
+                println!("Issue3");
+                return false;
+            }
+        };
+
+        true
+    }
+
+    pub fn verify_history() {}
+
+    pub fn verify_hint() {}
+
+    pub fn verify_escrow() {}
+
     fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
         let mut e_1 = P::G1::zero();
         let mut e_2 = P::G1::zero();
@@ -583,5 +638,17 @@ pub(crate) mod tests {
         // escrow = ublu.escrow(&pk, &hint_cur);
         // assert!(ublu.decrypt(&sk, &escrow));
         // println!("Still passing after adding one more");
+    }
+
+    #[test]
+    fn test_verify_key_gen() {
+        let lambda = 40;
+        let d = 10;
+        let t = 3;
+        let x: usize = 5;
+        let rng = AesRng::seed_from_u64(1);
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
+        let (pk, _sk, hint0) = ublu.key_gen(t);
+        assert!(ublu.verify_key_gen(t, pk, hint0));
     }
 }

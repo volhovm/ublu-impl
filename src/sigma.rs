@@ -43,7 +43,7 @@ impl<G: Group> SigmaProof<G> {
     where
         G::ScalarField: UniformRand,
     {
-        Self::sok(&lang, &inst, &wit, &G::zero())
+        Self::sok(lang, inst, wit, &G::zero())
     }
 
     pub fn verify_sig<O: CanonicalSerialize + ?Sized>(

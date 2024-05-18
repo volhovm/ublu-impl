@@ -116,8 +116,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
         let ch20: CH20CRS<P> = CH20CRS::setup(&mut rng);
         // Compute Stirling table
-        let stirling: Vec<u64> = stirling2_table(d).last().unwrap().to_owned();
-        // let stirling = stirling_tab.iter().map(|x| *x as usize).collect();
+        // TODO should validate that this is indeed what we want
+        let stirling: Vec<u64> = stirling2_table(d)[d - 1].to_owned();
         Ublu {
             lambda,
             d,
@@ -292,23 +292,23 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         new_com = new_com + old_hint.com_x.clone();
         // TODO can probably be optimized a bit by modifying cipherts in place
         let new_ciphers = self.update_powers2(old_hint.ciphers.clone(), r_i_list.clone(), x, pk.h);
-        let com_u = self
-            .pedersen
-            .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
-        let _xc: XC<P> = XC {
-            h: pk.h,
-            comt_t: pk.com_t.clone(),
-            old_com_x: old_hint.com_x.clone(),
-            com_u: com_u.com,
-            old_ciphers: old_hint.ciphers.clone(),
-        };
-        let _wc: WC<P> = WC {
-            x,
-            r_list: r_i_list.clone(),
-            r_x: *r_x,
-            alpha: P::ScalarField::zero(),
-            r_alpha: P::ScalarField::zero(),
-        };
+        // let com_u = self
+        //     .pedersen
+        //     .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
+        // let _xc: XC<P> = XC {
+        //     h: pk.h,
+        //     comt_t: pk.com_t.clone(),
+        //     old_com_x: old_hint.com_x.clone(),
+        //     com_u: com_u.com,
+        //     old_ciphers: old_hint.ciphers.clone(),
+        // };
+        // let _wc: WC<P> = WC {
+        //     x,
+        //     r_list: r_i_list.clone(),
+        //     r_x: *r_x,
+        //     alpha: P::ScalarField::zero(),
+        //     r_alpha: P::ScalarField::zero(),
+        // };
 
         let pi_c: CH20Proof<P> = {
             let hs: Vec<P::G1> = [self.com_h, pk.h]
@@ -403,11 +403,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
         let mut new_ciphers = Vec::with_capacity(self.d);
+        let x_field = P::ScalarField::from(x as u64);
         for i in 1..=self.d {
             let mut cur_a_res = P::G1::zero();
-            let mut cur_b_res = self.g * field_pow(P::ScalarField::from(x as u64), i);
+            let mut cur_b_res = self.g * field_pow(x_field, i);
             for j in 1..=i {
-                let cur_v_val = P::ScalarField::from(Self::v_func(x, i, j) as u64);
+                let cur_v_val = Self::v_func(x_field, i, j);
                 cur_a_res += old_ciphers.get(j - 1).unwrap().a * cur_v_val;
                 cur_b_res += old_ciphers.get(j - 1).unwrap().b * cur_v_val;
             }
@@ -421,9 +422,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         new_ciphers
     }
 
-    fn v_func(x: usize, i: usize, j: usize) -> usize {
-        let bin = binomial(i, j);
-        bin * x.pow((i - j) as u32)
+    fn v_func(x: P::ScalarField, i: usize, j: usize) -> P::ScalarField {
+        field_pow(x, i - j) * P::ScalarField::from(binomial(i, j) as u64)
     }
 
     fn blind_powers(
@@ -557,7 +557,7 @@ pub(crate) mod tests {
         let lambda = 40;
         let d = 10;
         let t = 3;
-        let x: usize = 1;
+        let x: usize = 2;
         let x_update: usize = 3;
         let rng = AesRng::seed_from_u64(1);
         let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
@@ -576,7 +576,7 @@ pub(crate) mod tests {
         }
         assert!(ublu.decrypt(&sk, &escrow));
         println!("Passed after {i} updates");
-        // 1 + 3 > 3
+        // 2 + 3 > 3
         assert_eq!(i, 1);
         // TODO this fails
         // (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, 1);

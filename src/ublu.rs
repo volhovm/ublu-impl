@@ -291,7 +291,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut new_com = self.pedersen.commit_raw(&x_field, r_x).com;
         new_com = new_com + old_hint.com_x.clone();
         // TODO can probably be optimized a bit by modifying cipherts in place
-        let new_ciphers = self.update_powers2(old_hint.ciphers.clone(), r_i_list.clone(), x, pk.h);
+        let new_ciphers =
+            self.update_powers2(old_hint.ciphers.clone(), r_i_list.clone(), x_field, pk.h);
         // let com_u = self
         //     .pedersen
         //     .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
@@ -399,11 +400,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         &self,
         old_ciphers: Vec<Cipher<P::G1>>,
         r_i_list: Vec<P::ScalarField>,
-        x: usize,
+        x_field: P::ScalarField,
         pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
         let mut new_ciphers = Vec::with_capacity(self.d);
-        let x_field = P::ScalarField::from(x as u64);
         for i in 1..=self.d {
             let mut cur_a_res = P::G1::zero();
             let mut cur_b_res = self.g * field_pow(x_field, i);

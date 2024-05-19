@@ -36,30 +36,34 @@ impl<G: Group> ElgamalParams<G> {
         (ElgamalSk { sk }, ElgamalPk { h: pk })
     }
 
-    pub fn encrypt_raw(&self, pk: &ElgamalPk<G>, msg: i32, rnd: G::ScalarField) -> Cipher<G> {
-        let mut val = G::ScalarField::from(msg.unsigned_abs());
-        if msg < 0 {
-            val = -val;
-        }
-        // Observe we do exponent encryption
+    pub fn encrypt_raw(
+        &self,
+        pk: &ElgamalPk<G>,
+        msg: G::ScalarField,
+        rnd: G::ScalarField,
+    ) -> Cipher<G> {
         Cipher {
             a: self.g * rnd,
-            b: self.g * val + pk.h * rnd,
+            b: self.g * msg + pk.h * rnd,
         }
     }
 
     pub fn encrypt<RNG: RngCore>(
         &mut self,
         pk: &ElgamalPk<G>,
-        msg: i32,
+        msg: G::ScalarField,
         rng: &mut RNG,
     ) -> Cipher<G> {
         self.encrypt_raw(pk, msg, <G::ScalarField as UniformRand>::rand(rng))
     }
 
-    pub fn decrypt(&self, cipher: &Cipher<G>, sk: &ElgamalSk<G>) -> anyhow::Result<i32> {
+    pub fn decrypt(&self, cipher: &Cipher<G>, sk: &ElgamalSk<G>) -> G {
         let s = cipher.a * sk.sk;
-        let m = s.neg() + cipher.b;
+        s.neg() + cipher.b
+    }
+
+    pub fn decrypt_exponent(&self, cipher: &Cipher<G>, sk: &ElgamalSk<G>) -> anyhow::Result<i32> {
+        let m = self.decrypt(cipher, sk);
         for ctr in 0..=MAX_TRIES {
             if m == self.g * G::ScalarField::from(ctr) {
                 return Ok(ctr as i32);
@@ -75,9 +79,11 @@ impl<G: Group> ElgamalParams<G> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::CF;
     use aes_prng::AesRng;
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
+    use ark_ff::Zero;
     use rand::SeedableRng;
 
     use super::ElgamalParams;
@@ -87,8 +93,8 @@ pub(crate) mod tests {
         let mut rng = AesRng::seed_from_u64(1);
         let mut elgamal = ElgamalParams::<<Bls12_381 as Pairing>::G1>::new(&mut rng);
         let (sk, pk) = elgamal.key_gen(&mut rng);
-        let c = elgamal.encrypt(&pk, 42, &mut rng);
-        let res = elgamal.decrypt(&c, &sk).unwrap();
+        let c = elgamal.encrypt(&pk, From::from(42), &mut rng);
+        let res = elgamal.decrypt_exponent(&c, &sk).unwrap();
         assert_eq!(res, 42);
     }
 
@@ -97,8 +103,8 @@ pub(crate) mod tests {
         let mut rng = AesRng::seed_from_u64(1);
         let mut elgamal = ElgamalParams::<<Bls12_381 as Pairing>::G1>::new(&mut rng);
         let (sk, pk) = elgamal.key_gen(&mut rng);
-        let c = elgamal.encrypt(&pk, -42, &mut rng);
-        let res = elgamal.decrypt(&c, &sk).unwrap();
+        let c = elgamal.encrypt(&pk, CF::zero() - CF::from(42), &mut rng);
+        let res = elgamal.decrypt_exponent(&c, &sk).unwrap();
         assert_eq!(res, -42);
     }
 }

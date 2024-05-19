@@ -4,9 +4,8 @@
 #![allow(dead_code)]
 use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
-use ark_std::Zero;
+use ark_std::{One, Zero};
 use rand::RngCore;
-use stirling_numbers::stirling2_table;
 
 use crate::{
     ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
@@ -29,7 +28,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     elgamal: ElgamalParams<P::G1>,
     pedersen: PedersenParams<P::G1>,
     ch20crs: CH20CRS<P>,
-    stirling: Vec<u64>,
+    stirling: Vec<P::ScalarField>,
 }
 
 //TODO placeholder
@@ -114,9 +113,18 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             w.push(P::G1::rand(&mut rng));
         }
         let ch20: CH20CRS<P> = CH20CRS::setup(&mut rng);
-        // Compute Stirling table
-        // TODO should validate that this is indeed what we want
-        let stirling: Vec<u64> = stirling2_table(d)[d - 1].to_owned();
+        let stirling: Vec<P::ScalarField> = (0..d + 1)
+            .map(|k| {
+                let value: i64 = crate::utils::stirling_first_kind_rec(d, k);
+                let sign = if value < 0 { -1 } else { 1 };
+                let sign_f = if value < 0 {
+                    -P::ScalarField::one()
+                } else {
+                    P::ScalarField::one()
+                };
+                P::ScalarField::from((value * sign) as u64) * sign_f
+            })
+            .collect();
         Ublu {
             lambda,
             d,
@@ -138,8 +146,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut r_vec = Vec::with_capacity(t as usize);
         let mut ciphers = Vec::with_capacity(t as usize);
         for i in 1..=self.d {
-            let base = -(t as i32);
-            let cur_msg = base.pow(i as u32);
+            let base = P::ScalarField::zero() - P::ScalarField::from(t);
+            let cur_msg = field_pow(base, i);
             let cur_r = P::ScalarField::rand(rng);
             r_vec.push(cur_r);
             ciphers.push(self.elgamal.encrypt_raw(&pk, cur_msg, cur_r));
@@ -499,9 +507,9 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let mut prod_d = P::G1::zero();
             let mut prod_w = P::G1::zero();
             for i in 1..=self.d {
-                prod_a += blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
-                prod_d += blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
-                prod_w += self.w[i - 1] * (-P::ScalarField::from(self.stirling[i - 1]));
+                prod_a += blinded_ciphers[i - 1].a * self.stirling[i - 1];
+                prod_d += blinded_ciphers[i - 1].b * self.stirling[i - 1];
+                prod_w += self.w[i - 1] * (-self.stirling[i - 1]);
             }
             assert_eq!(escrow_enc.a, prod_a * beta);
             assert_eq!(escrow_enc.b, prod_d * beta + prod_w * (beta * alpha));
@@ -540,11 +548,9 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let mut prod_d = P::G1::zero();
             let mut prod_w = P::G1::zero();
             for i in 1..=self.d {
-                prod_a +=
-                    escrow.blinded_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
-                prod_d +=
-                    escrow.blinded_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
-                prod_w += self.w[i - 1] * (-P::ScalarField::from(self.stirling[i - 1]));
+                prod_a += escrow.blinded_ciphers[i - 1].a * self.stirling[i - 1];
+                prod_d += escrow.blinded_ciphers[i - 1].b * self.stirling[i - 1];
+                prod_w += self.w[i - 1] * (-self.stirling[i - 1]);
             }
 
             let inst = AlgInst(vec![
@@ -567,7 +573,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         m == P::G1::zero()
     }
 
-    pub fn verify_key_gen(&self, pk: PublicKey<P>, hint0: Hint<P>) -> bool {
+    pub fn verify_key_gen(&self, pk: &PublicKey<P>, hint0: &Hint<P>) -> bool {
         if hint0.com_x.value != P::G1::zero() {
             println!("Issue1");
             return false;
@@ -618,7 +624,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         true
     }
 
-    pub fn verify_history(&self, pk: PublicKey<P>, history: Vec<(Tag<P>, Comm<P::G1>)>) -> bool {
+    pub fn verify_history(&self, pk: &PublicKey<P>, history: Vec<(Tag<P>, Comm<P::G1>)>) -> bool {
         let mut old_com_x = P::G1::zero();
         for (i, (tag_i, com_i)) in history.iter().enumerate() {
             let lang = trace_lang(self.g, self.com_h);
@@ -643,7 +649,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         true
     }
 
-    pub fn verify_hint(&self, pk: PublicKey<P>, hint: Hint<P>, tag: Tag<P>) -> bool {
+    pub fn verify_hint(&self, pk: &PublicKey<P>, hint: &Hint<P>, tag: &Tag<P>) -> bool {
         let hs: Vec<P::G1> = [self.com_h, pk.h]
             .into_iter()
             .chain(self.w.clone())
@@ -673,7 +679,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .is_ok()
     }
 
-    pub fn verify_escrow(&self, pk: PublicKey<P>, escrow: Escrow<P>, tag: Tag<P>) -> bool {
+    pub fn verify_escrow(&self, pk: &PublicKey<P>, escrow: &Escrow<P>, tag: &Tag<P>) -> bool {
         if tag.com != escrow.com_x {
             return false;
         }
@@ -742,33 +748,25 @@ pub(crate) mod tests {
         let lambda = 40;
         let d = 10;
         let t = 3;
-        let x: usize = 2;
-        let x_update: usize = 3;
+        let x_update: usize = 4;
 
         let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
         let (pk, sk, mut hint_pre) = ublu.key_gen(t);
         let mut tag_pre = None;
-        let r_got = CF::rand(&mut rng);
-        let (mut hint_cur, mut tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
-        let mut escrow = ublu.escrow(&pk, &hint_cur);
-        assert!(!ublu.decrypt(&sk, &escrow));
-        let mut i = 0;
-        while !ublu.decrypt(&sk, &escrow) && i < d {
-            (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x_update, r_got);
-            escrow = ublu.escrow(&pk, &hint_cur);
+
+        for i in 0..1 {
+            let r_got = CF::rand(&mut rng);
+            let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x_update, r_got);
+            assert!(ublu.verify_hint(&pk, &hint_cur, &tag_cur));
+            println!("Update step i={i:?}");
+            let escrow = ublu.escrow(&pk, &hint_cur);
+            assert!(ublu.verify_escrow(&pk, &escrow, &tag_cur));
+            println!("Escrow decryption result: {:?}", ublu.decrypt(&sk, &escrow));
             hint_pre = hint_cur.clone();
             tag_pre = Some(tag_cur.clone());
-            i += 1;
         }
-        assert!(ublu.decrypt(&sk, &escrow));
-        println!("Passed after {i} updates");
-        // 2 + 3 > 3
-        assert_eq!(i, 1);
-        // TODO this fails
-        // (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, 1);
-        // escrow = ublu.escrow(&pk, &hint_cur);
-        // assert!(ublu.decrypt(&sk, &escrow));
-        // println!("Still passing after adding one more");
+
+        panic!()
     }
 
     #[test]
@@ -781,7 +779,7 @@ pub(crate) mod tests {
 
         let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng);
         let (pk, _sk, hint0) = ublu.key_gen(t);
-        assert!(ublu.verify_key_gen(pk, hint0));
+        assert!(ublu.verify_key_gen(&pk, &hint0));
     }
 
     #[test]
@@ -798,7 +796,7 @@ pub(crate) mod tests {
         let tag_pre = None;
         let r_got = CF::rand(&mut rng);
         let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
-        assert!(ublu.verify_hint(pk, hint_cur, tag_cur));
+        assert!(ublu.verify_hint(&pk, &hint_cur, &tag_cur));
     }
 
     #[test]
@@ -833,7 +831,7 @@ pub(crate) mod tests {
             history.push((tag, ext_com));
         }
 
-        assert!(ublu.verify_history(pk, history));
+        assert!(ublu.verify_history(&pk, history));
     }
 
     #[test]
@@ -852,6 +850,6 @@ pub(crate) mod tests {
         let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
         let escrow = ublu.escrow(&pk, &hint_cur);
 
-        assert!(ublu.verify_escrow(pk, escrow, tag_cur));
+        assert!(ublu.verify_escrow(&pk, &escrow, &tag_cur));
     }
 }

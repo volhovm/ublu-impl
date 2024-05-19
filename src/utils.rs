@@ -26,6 +26,45 @@ pub fn field_pow<F: PrimeField>(base: F, exp: usize) -> F {
     res
 }
 
+// TODO returns unsigned, should be signed.
+// Fast dynamic programming implementation, does not work yet.
+pub fn stirling_first_kind(n: usize, k: usize) -> u64 {
+    let maxj: usize = n - k;
+
+    let mut arr: Vec<u64> = vec![0; maxj + 1];
+
+    for i in 0..maxj {
+        arr[i] = 1;
+    }
+
+    for i in 2..k {
+        for j in 1..maxj {
+            arr[j] += (i as u64) * arr[j - 1];
+        }
+    }
+    arr[maxj]
+}
+
+// Slow recursive PoC implementation
+pub fn stirling_first_kind_rec(n: usize, k: usize) -> i64 {
+    assert!(k <= n);
+
+    // https://en.wikipedia.org/wiki/Stirling_numbers_of_the_first_kind#Recurrence_relation
+    fn stirling_first_kind_rec_unsigned(n: usize, k: usize) -> u64 {
+        if k == n {
+            return 1;
+        } else if k == 0 {
+            return 0;
+        }
+
+        stirling_first_kind_rec_unsigned(n - 1, k - 1)
+            + ((n - 1) as u64) * stirling_first_kind_rec_unsigned(n - 1, k)
+    }
+
+    let sign: i64 = if (n - k) % 2 == 0 { 1 } else { -1 };
+    sign * (stirling_first_kind_rec_unsigned(n, k) as i64)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -56,5 +95,46 @@ pub(crate) mod tests {
         assert!(binomial(5, 4) == 5);
         assert!(binomial(12, 5) == 792);
         println!("Binomial test passed")
+    }
+
+    #[test]
+    fn test_stirling() {
+        fn check_stirling(d: usize, x: i64) {
+            let stirling: Vec<i64> = (0..d + 1).map(|k| stirling_first_kind_rec(d, k)).collect();
+
+            //println!("Stirling numbers for d={d:?}: {stirling:?}");
+
+            let eval1 = (0..d).map(|delta| x - (delta as i64)).reduce(|x, y| x * y);
+            let eval2 = (0..d + 1).map(|i| stirling[i] * x).reduce(|x, y| x + y);
+
+            assert!(eval1 == eval2, "Failed for d={d:?}, x={x:?}");
+        }
+
+        // Works
+        check_stirling(1, 1);
+        check_stirling(2, 1);
+        check_stirling(3, 1);
+        check_stirling(4, 1);
+        check_stirling(5, 1);
+        check_stirling(6, 1);
+        check_stirling(7, 1);
+
+        // Works
+        check_stirling(1, 0);
+        check_stirling(2, 1);
+        check_stirling(3, 2);
+        check_stirling(4, 3);
+        check_stirling(5, 4);
+        check_stirling(6, 5);
+        check_stirling(7, 6);
+
+        // Doesn't?
+        //check_stirling(1, 0);
+        //check_stirling(2, 1);
+        //check_stirling(3, 2);
+        //check_stirling(4, 3);
+        //check_stirling(5, 4);
+        //check_stirling(6, 5);
+        //check_stirling(7, 6);
     }
 }

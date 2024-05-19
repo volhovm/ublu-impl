@@ -297,7 +297,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         new_com = new_com + old_hint.com_x.clone();
         // TODO can probably be optimized a bit by modifying cipherts in place
         let new_ciphers =
-            self.update_powers2(old_hint.ciphers.clone(), r_i_list.clone(), x_field, pk.h);
+            self.update_powers(old_hint.ciphers.clone(), r_i_list.clone(), x_field, pk.h);
         // let com_u = self
         //     .pedersen
         //     .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
@@ -359,7 +359,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
     }
 
-    fn update_powers(
+    pub fn update_powers(
         &mut self,
         old_ciphers: Vec<Cipher<P::G1>>,
         r_i_list: Vec<P::ScalarField>,
@@ -374,6 +374,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             // TODO fails with negative subtraction because the j's should only iterate up to i, but goes all the way to d
             let a = old_ciphers
                 .iter()
+                .take(i + 1)
                 .enumerate()
                 .map(|(j, c_j)| c_j.a * v_coeff(i + 1, j + 1))
                 .reduce(|x, y| x + y)
@@ -381,6 +382,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 + self.g * r_i_list[i];
             let b = old_ciphers
                 .iter()
+                .take(i + 1)
                 .enumerate()
                 .map(|(j, c_j)| c_j.b * v_coeff(i + 1, j + 1))
                 .reduce(|x, y| x + y)
@@ -394,7 +396,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         new_ciphers
     }
 
-    fn update_powers2(
+    pub fn update_powers2(
         &self,
         old_ciphers: Vec<Cipher<P::G1>>,
         r_i_list: Vec<P::ScalarField>,
@@ -720,12 +722,13 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         true
     }
 
-    fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
+    pub fn evaluate(&self, old_ciphers: &[Cipher<P::G1>], beta: P::ScalarField) -> Cipher<P::G1> {
         let mut e_1 = P::G1::zero();
         let mut e_2 = P::G1::zero();
-        for i in 1..=self.d {
-            e_1 += old_ciphers[i - 1].a * P::ScalarField::from(self.stirling[i - 1]);
-            e_2 += old_ciphers[i - 1].b * P::ScalarField::from(self.stirling[i - 1]);
+        for i in 0..self.d {
+            // We store powers 1..d, stirling coefficients start with 0.
+            e_1 += old_ciphers[i].a * self.stirling[i + 1];
+            e_2 += old_ciphers[i].b * self.stirling[i + 1];
         }
         e_1 *= beta;
         e_2 *= beta;
@@ -736,10 +739,11 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{Tag, Ublu};
-    use crate::{commitment::Comm, CC, CF, CG1};
+    use crate::{commitment::Comm, elgamal::Cipher, CC, CF, CG1};
     use aes_prng::AesRng;
     use ark_bls12_381::Bls12_381;
     use ark_ff::UniformRand;
+    use ark_std::{One, Zero};
     use rand::SeedableRng;
 
     #[test]
@@ -851,5 +855,48 @@ pub(crate) mod tests {
         let escrow = ublu.escrow(&pk, &hint_cur);
 
         assert!(ublu.verify_escrow(&pk, &escrow, &tag_cur));
+    }
+
+    #[test]
+    fn test_update_powers() {
+        let rng = AesRng::seed_from_u64(1);
+        let lambda = 40;
+        let d = 10;
+        let t: u32 = 3;
+        let x_update: u32 = 5;
+
+        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
+        let (pk, sk, hint_pre) = ublu.key_gen(t);
+        let init_ciphers: Vec<Cipher<_>> = hint_pre.ciphers;
+
+        {
+            assert!(
+                init_ciphers[0].b - init_ciphers[0].a * sk.elgamal_sk.sk
+                    == ublu.g * (CF::zero() - CF::from(t))
+            );
+        }
+
+        let updated_ciphers =
+            ublu.update_powers2(init_ciphers, vec![CF::zero(); d], CF::from(x_update), pk.h);
+
+        {
+            assert!(
+                updated_ciphers[0].b - updated_ciphers[0].a * sk.elgamal_sk.sk
+                    == ublu.g * CF::from(x_update - t)
+            );
+            assert!(
+                updated_ciphers[2].b - updated_ciphers[2].a * sk.elgamal_sk.sk
+                    == ublu.g * crate::utils::field_pow(CF::from(x_update - t), 3)
+            );
+        }
+
+        let beta = CF::one();
+
+        let escrow_enc = ublu.evaluate(&updated_ciphers, beta);
+
+        {
+            let m = escrow_enc.b - escrow_enc.a * sk.elgamal_sk.sk;
+            assert!(m == CG1::zero());
+        }
     }
 }

@@ -508,10 +508,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let mut prod_a = P::G1::zero();
             let mut prod_d = P::G1::zero();
             let mut prod_w = P::G1::zero();
-            for i in 1..=self.d {
-                prod_a += blinded_ciphers[i - 1].a * self.stirling[i - 1];
-                prod_d += blinded_ciphers[i - 1].b * self.stirling[i - 1];
-                prod_w += self.w[i - 1] * (-self.stirling[i - 1]);
+            for i in 0..self.d {
+                prod_a += blinded_ciphers[i].a * self.stirling[i + 1];
+                prod_d += blinded_ciphers[i].b * self.stirling[i + 1];
+                prod_w += self.w[i] * (-self.stirling[i + 1]);
             }
             assert_eq!(escrow_enc.a, prod_a * beta);
             assert_eq!(escrow_enc.b, prod_d * beta + prod_w * (beta * alpha));

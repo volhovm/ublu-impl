@@ -105,12 +105,13 @@ pub(crate) mod tests {
             //println!("Stirling numbers for d={d:?}: {stirling:?}");
 
             let eval1 = (0..d).map(|delta| x - (delta as i64)).reduce(|x, y| x * y);
-            let eval2 = (0..d + 1).map(|i| stirling[i] * x).reduce(|x, y| x + y);
+            let eval2 = (0..d + 1)
+                .map(|i| stirling[i] * x.pow(i as u32))
+                .reduce(|x, y| x + y);
 
             assert!(eval1 == eval2, "Failed for d={d:?}, x={x:?}");
         }
 
-        // Works
         check_stirling(1, 1);
         check_stirling(2, 1);
         check_stirling(3, 1);
@@ -119,7 +120,6 @@ pub(crate) mod tests {
         check_stirling(6, 1);
         check_stirling(7, 1);
 
-        // Works
         check_stirling(1, 0);
         check_stirling(2, 1);
         check_stirling(3, 2);
@@ -128,13 +128,20 @@ pub(crate) mod tests {
         check_stirling(6, 5);
         check_stirling(7, 6);
 
-        // Doesn't?
-        //check_stirling(1, 0);
-        //check_stirling(2, 1);
-        //check_stirling(3, 2);
-        //check_stirling(4, 3);
-        //check_stirling(5, 4);
-        //check_stirling(6, 5);
-        //check_stirling(7, 6);
+        check_stirling(1, 1);
+        check_stirling(2, 2);
+        check_stirling(3, 3);
+        check_stirling(4, 4);
+        check_stirling(5, 5);
+        check_stirling(6, 6);
+        check_stirling(7, 7);
+
+        check_stirling(1, 100);
+        check_stirling(2, 101);
+        check_stirling(3, 102);
+        check_stirling(4, 103);
+        check_stirling(5, 104);
+        check_stirling(6, 105);
+        check_stirling(7, 106);
     }
 }

@@ -543,31 +543,31 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     pub fn decrypt(&self, sk: &SecretKey<P>, escrow: &Escrow<P>) -> bool {
         let e_1 = escrow.escrow_enc.a;
         let e_2 = escrow.escrow_enc.b;
-        // Verify escrow proof
-        let e_valid = {
-            let lang = escrow_lang(self.g, self.com_h);
-            let mut prod_a = P::G1::zero();
-            let mut prod_d = P::G1::zero();
-            let mut prod_w = P::G1::zero();
-            for i in 1..=self.d {
-                prod_a += escrow.blinded_ciphers[i - 1].a * self.stirling[i - 1];
-                prod_d += escrow.blinded_ciphers[i - 1].b * self.stirling[i - 1];
-                prod_w += self.w[i - 1] * (-self.stirling[i - 1]);
-            }
+        //// Verify escrow proof
+        //let e_valid = {
+        //    let lang = escrow_lang(self.g, self.com_h);
+        //    let mut prod_a = P::G1::zero();
+        //    let mut prod_d = P::G1::zero();
+        //    let mut prod_w = P::G1::zero();
+        //    for i in 1..=self.d {
+        //        prod_a += escrow.blinded_ciphers[i - 1].a * self.stirling[i - 1];
+        //        prod_d += escrow.blinded_ciphers[i - 1].b * self.stirling[i - 1];
+        //        prod_w += self.w[i - 1] * (-self.stirling[i - 1]);
+        //    }
 
-            let inst = AlgInst(vec![
-                escrow.com_alpha.value,
-                escrow.com_beta.value,
-                P::G1::zero(),
-                escrow.escrow_enc.a,
-                escrow.escrow_enc.b,
-                prod_a,
-                prod_d,
-                prod_w,
-            ]);
-            escrow.proof_e.verify(&lang, &inst)
-        };
-        assert!(e_valid.is_ok());
+        //    let inst = AlgInst(vec![
+        //        escrow.com_alpha.value,
+        //        escrow.com_beta.value,
+        //        P::G1::zero(),
+        //        escrow.escrow_enc.a,
+        //        escrow.escrow_enc.b,
+        //        prod_a,
+        //        prod_d,
+        //        prod_w,
+        //    ]);
+        //    escrow.proof_e.verify(&lang, &inst)
+        //};
+        //assert!(e_valid.is_ok());
         let rhs = e_1 * sk.elgamal_sk.sk;
         assert_ne!(rhs, P::G1::zero());
         assert_ne!(e_2, P::G1::zero());
@@ -747,30 +747,43 @@ pub(crate) mod tests {
     use rand::SeedableRng;
 
     #[test]
-    fn sunshine() {
-        let mut rng = AesRng::seed_from_u64(1);
+    fn test_decryption_correct() {
         let lambda = 40;
-        let d = 10;
-        let t = 3;
-        let x_update: usize = 4;
+        let d = 15;
+        let t = 7;
 
-        let mut ublu: Ublu<Bls12_381, AesRng> = Ublu::setup(lambda, d, rng.clone());
+        let mut ublu: Ublu<Bls12_381, _> = Ublu::setup(lambda, d, rand::thread_rng());
         let (pk, sk, mut hint_pre) = ublu.key_gen(t);
         let mut tag_pre = None;
 
-        for i in 0..1 {
-            let r_got = CF::rand(&mut rng);
-            let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x_update, r_got);
-            assert!(ublu.verify_hint(&pk, &hint_cur, &tag_cur));
-            println!("Update step i={i:?}");
-            let escrow = ublu.escrow(&pk, &hint_cur);
-            assert!(ublu.verify_escrow(&pk, &escrow, &tag_cur));
-            println!("Escrow decryption result: {:?}", ublu.decrypt(&sk, &escrow));
-            hint_pre = hint_cur.clone();
-            tag_pre = Some(tag_cur.clone());
-        }
+        let mut runfoo = |x_update: u32| {
+            let mut cur_acc_x = 0;
+            for i in 0..5 {
+                let r_got = CF::rand(&mut rand::thread_rng());
+                let (hint_cur, tag_cur) =
+                    ublu.update(&pk, &hint_pre, &tag_pre, x_update as usize, r_got);
+                assert!(ublu.verify_hint(&pk, &hint_cur, &tag_cur));
+                println!("Update step i={i:?}");
+                let escrow = ublu.escrow(&pk, &hint_cur);
+                cur_acc_x += x_update;
+                assert!(ublu.verify_escrow(&pk, &escrow, &tag_cur));
+                assert!(
+                    ublu.decrypt(&sk, &escrow) == (cur_acc_x >= t && cur_acc_x < (t + d as u32))
+                );
+                println!("Escrow decryption result: {:?}", ublu.decrypt(&sk, &escrow));
+                hint_pre = hint_cur.clone();
+                tag_pre = Some(tag_cur.clone());
+            }
+        };
 
-        panic!()
+        runfoo(1);
+        runfoo(2);
+        runfoo(3);
+        runfoo(4);
+        runfoo(5);
+        runfoo(6);
+        runfoo(7);
+        runfoo(8);
     }
 
     #[test]

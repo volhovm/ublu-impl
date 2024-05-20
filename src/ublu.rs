@@ -230,7 +230,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         // This proof is not supposed to pass w.r.t. hint_i, only w.r.t. hint_0.
         if old_tag.is_none() {
             let inst = AlgInst::new(&self.pk_lang, vec![pk.h, hint.ciphers[0].b, pk.com_t.value]);
-            assert!(pk.proof_pk.proof.verify(&self.pk_lang, &inst).is_ok());
+            assert!(pk.proof_pk.proof.verify(&inst).is_ok());
         };
 
         let new_hint = self.update_hint(pk, hint, x, &r_x);
@@ -551,7 +551,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 &self.pk_lang,
                 vec![pk.h, hint0.ciphers[0].b, pk.com_t.value],
             );
-            if pk.proof_pk.proof.verify(&self.pk_lang, &inst).is_err() {
+            if pk.proof_pk.proof.verify(&inst).is_err() {
                 println!("Issue2");
                 return false;
             }
@@ -603,15 +603,12 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let proof = &tag_i.proof.proof;
 
             if i == 0 {
-                if proof
-                    .verify_sig(&self.trace_lang, &inst, &pk.proof_pk.proof)
-                    .is_err()
-                {
+                if proof.verify_sig(&inst, &pk.proof_pk.proof).is_err() {
                     println!("First proof failed");
                     return false;
                 }
             } else if proof
-                .verify_sig(&self.trace_lang, &inst, &history[i - 1].0.proof.proof)
+                .verify_sig(&inst, &history[i - 1].0.proof.proof)
                 .is_err()
             {
                 println!("Proof #{i:?} failed");

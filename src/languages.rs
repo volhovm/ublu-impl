@@ -174,7 +174,7 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst);
+        let ver = proof.verify(&inst);
         println!("proof is {:?}", ver);
         assert!(ver.is_ok());
     }
@@ -225,7 +225,7 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst);
+        let ver = proof.verify(&inst);
         println!("proof is {:?}", ver);
         assert!(ver.is_ok());
     }

@@ -47,7 +47,6 @@ impl<G: Group> SigmaProof<G> {
 
     pub fn verify_sig<O: CanonicalSerialize + ?Sized>(
         &self,
-        lang: &AlgLang<G>,
         inst: &AlgInst<G>,
         msg: &O,
     ) -> Result<(), SigmaVerifierError> {
@@ -70,8 +69,8 @@ impl<G: Group> SigmaProof<G> {
         }
         Ok(())
     }
-    pub fn verify(&self, lang: &AlgLang<G>, inst: &AlgInst<G>) -> Result<(), SigmaVerifierError> {
-        self.verify_sig(&lang, &inst, &G::zero())
+    pub fn verify(&self, inst: &AlgInst<G>) -> Result<(), SigmaVerifierError> {
+        self.verify_sig(&inst, &G::zero())
     }
 }
 
@@ -149,11 +148,11 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst);
+        let ver = proof.verify(&inst);
         println!("proof is {:?}", ver);
         assert!(ver.is_ok());
 
-        let wrong = proof.verify(&lang, &inst2);
+        let wrong = proof.verify(&inst2);
         assert!(wrong.is_err());
     }
 
@@ -196,7 +195,7 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst);
+        let ver = proof.verify(&inst);
         println!("proof is {:?}", ver);
         assert!(ver.is_ok());
     }
@@ -331,7 +330,7 @@ pub(crate) mod tests {
 
         println!("proof {:?}", proof);
 
-        let ver = proof.verify(&lang, &inst);
+        let ver = proof.verify(&inst);
         println!("proof is {:?}", ver);
         assert!(ver.is_ok());
     }

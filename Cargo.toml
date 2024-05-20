@@ -19,6 +19,7 @@ stirling_numbers = "0.1.7"
 ark-serialize = { version = "0.4.2", features = ["derive"] }
 
 [dev-dependencies]
+pprof = { version = "0.13.0", features = ["flamegraph"] }
 criterion = "0.5.1"
 
 [[bench]]

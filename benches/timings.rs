@@ -9,6 +9,8 @@ use rand::thread_rng;
 use ublu_impl::ublu::Ublu;
 use ublu_impl::CF;
 
+mod perf;
+
 static D_VALUES: [usize; 4] = [2, 4, 8, 20];
 static T: u32 = 4;
 
@@ -110,11 +112,12 @@ fn bench_escrow_ver(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_keygen,
-    bench_keyver,
-    bench_escrow,
-    bench_escrow_ver
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
+    targets = bench_keygen
+    //bench_keyver,
+    //bench_escrow,
+    //bench_escrow_ver
+}
 criterion_main!(benches);

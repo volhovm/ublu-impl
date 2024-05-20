@@ -77,26 +77,6 @@ pub struct Tag<P: Pairing> {
     com: Comm<P::G1>,
 }
 
-// TODO delete
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XC<P: Pairing> {
-    h: P::G1,
-    comt_t: Comm<P::G1>,
-    old_com_x: Comm<P::G1>,
-    com_u: Comm<P::G1>,
-    old_ciphers: Vec<Cipher<P::G1>>,
-}
-
-// TODO delete
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WC<P: Pairing> {
-    x: usize,
-    r_list: Vec<P::ScalarField>,
-    r_x: P::ScalarField,
-    alpha: P::ScalarField,
-    r_alpha: P::ScalarField,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Escrow<P: Pairing> {
     /// (E1, E2)

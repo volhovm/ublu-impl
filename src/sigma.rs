@@ -24,15 +24,14 @@ impl<G: Group> SigmaProof<G> {
         msg: &O,
     ) -> SigmaProof<G> {
         let mut t = Transcript::new(b"sigma_proof");
-        t.append(&inst.0);
+        t.append(&inst.instance);
         t.append(msg);
 
         let mut rng = thread_rng();
         let r: Vec<G::ScalarField> = (0..(lang.wit_size()))
             .map(|_i| <G::ScalarField as UniformRand>::rand(&mut rng))
             .collect();
-        let matrix = lang.instantiate_matrix(&inst.0);
-        let a: Vec<G> = mul_mat_by_vec_g_f(&matrix, &r);
+        let a: Vec<G> = mul_mat_by_vec_g_f(&inst.matrix, &r);
         t.append(&a);
         let chl: G::ScalarField = t.challenge(b"challenge").read_uniform();
         let z = wit.0.iter().zip(r).map(|(w, r)| r - chl * w).collect();
@@ -53,16 +52,15 @@ impl<G: Group> SigmaProof<G> {
         msg: &O,
     ) -> Result<(), SigmaVerifierError> {
         let mut t = Transcript::new(b"sigma_proof");
-        t.append(&inst.0);
+        t.append(&inst.instance);
         t.append(msg);
         t.append(&self.a);
         let chl: G::ScalarField = t.challenge(b"challenge").read_uniform();
-        let matrix = lang.instantiate_matrix(&inst.0);
-        let lhs: Vec<G> = mul_mat_by_vec_g_f(&matrix, &self.z);
+        let lhs: Vec<G> = mul_mat_by_vec_g_f(&inst.matrix, &self.z);
         let rhs: Vec<G> = self
             .a
             .iter()
-            .zip(&inst.0)
+            .zip(&inst.instance)
             .map(|(a, i)| *a - *i * chl)
             .collect();
         if lhs != rhs {
@@ -139,8 +137,8 @@ pub(crate) mod tests {
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![gx, gy, gz]);
-        let inst2: AlgInst<CG1> = AlgInst(vec![gx, gx, gz]);
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gy, gz]);
+        let inst2: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gx, gz]);
         let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
 
         let lang_valid = lang.contains(&inst, &wit);
@@ -187,7 +185,7 @@ pub(crate) mod tests {
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![Xi - Xi1, Ci, H]); //
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![Xi - Xi1, Ci, H]); //
         let wit: AlgWit<CG1> = AlgWit(vec![xi, rxi, ri]);
 
         let lang_valid = lang.contains(&inst, &wit);
@@ -272,10 +270,11 @@ pub(crate) mod tests {
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![U, B, G * CF::zero(), E1, E2, PA, PD, PW]);
+        let inst: AlgInst<CG1> =
+            AlgInst::new(&lang, vec![U, B, G * CF::zero(), E1, E2, PA, PD, PW]);
         let wit: AlgWit<CG1> = AlgWit(vec![a, ra, b, rb, ba, rba]);
 
-        println!("inst {:?}", lang.instantiate_matrix(&inst.0));
+        println!("inst {:?}", &inst.matrix);
 
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
@@ -321,7 +320,7 @@ pub(crate) mod tests {
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![H, B01, T]); //
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![H, B01, T]); //
         let wit: AlgWit<CG1> = AlgWit(vec![sk, t, r01, rt]);
 
         let lang_valid = lang.contains(&inst, &wit);

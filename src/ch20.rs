@@ -44,12 +44,21 @@ impl<G: Group> LinearPoly<G> {
 }
 
 #[derive(Debug, Clone)]
-pub struct AlgInst<G: Group>(pub Vec<G>);
+pub struct AlgInst<G: Group> {
+    pub(crate) instance: Vec<G>,
+    pub(crate) matrix: Vec<Vec<G>>, // Preprocessed matrix from instance
+}
+impl<G: Group> AlgInst<G> {
+    pub fn new(language: &AlgLang<G>, instance: Vec<G>) -> Self {
+        let matrix = language.instantiate_matrix(&instance);
+        AlgInst { instance, matrix }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AlgWit<G: Group>(pub Vec<G::ScalarField>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AlgLang<G: Group> {
     pub matrix: Vec<Vec<LinearPoly<G>>>,
 }
@@ -73,15 +82,14 @@ impl<G: Group> AlgLang<G> {
         self.matrix.len()
     }
     pub fn contains(&self, inst: &AlgInst<G>, wit: &AlgWit<G>) -> bool {
-        let matrix = self.instantiate_matrix(&inst.0);
-        let inst2 = mul_mat_by_vec_g_f(&matrix, &wit.0);
+        let inst2 = mul_mat_by_vec_g_f(&inst.matrix, &wit.0);
         // we only compare the first inst_size elements of the instance,
         // the rest of the instance may be only needed for instantiate_matrix
 
-        if inst2 != inst.0[0..self.inst_size()] {
+        if inst2 != inst.instance[0..self.inst_size()] {
             for (idx, (i2, i)) in inst2
                 .iter()
-                .zip(inst.0[0..self.inst_size()].iter())
+                .zip(inst.instance[0..self.inst_size()].iter())
                 .enumerate()
             {
                 if i2 != i {
@@ -181,8 +189,7 @@ impl<P: Pairing> CH20Proof<P> {
         let r: Vec<P::ScalarField> = (0..(lang.wit_size()))
             .map(|_i| <P::ScalarField as UniformRand>::rand(rng))
             .collect();
-        let matrix = lang.instantiate_matrix(&inst.0);
-        let a: Vec<P::G1> = mul_mat_by_vec_g_f(&matrix, &r);
+        let a: Vec<P::G1> = mul_mat_by_vec_g_f(&inst.matrix, &r);
         let d: Vec<P::G2> = wit
             .0
             .iter()
@@ -200,14 +207,12 @@ impl<P: Pairing> CH20Proof<P> {
     ) -> Result<(), CH20VerifierError> {
         let mut lhs: Vec<Vec<P::G1>> = vec![vec![]; lang.inst_size()];
         let mut rhs: Vec<Vec<P::G2>> = vec![vec![]; lang.inst_size()];
-        let mat = lang.instantiate_matrix(&inst.0);
-        //println!("{mat:?}");
         for i in 0..lang.inst_size() {
             for j in 0..lang.wit_size() {
-                lhs[i].push(mat[i][j]);
+                lhs[i].push(inst.matrix[i][j]);
                 rhs[i].push(self.d[j]);
             }
-            lhs[i].push(inst.0[i]);
+            lhs[i].push(inst.instance[i]);
             rhs[i].push(-crs.e);
             lhs[i].push(self.a[i]);
             rhs[i].push(-P::G2::generator());
@@ -227,14 +232,14 @@ impl<P: Pairing> CH20Proof<P> {
 
     pub fn update(
         &self,
+        rng: &mut dyn RngCore,
         crs: &CH20CRS<P>,
         lang: &AlgLang<P::G1>,
         inst: &AlgInst<P::G1>,
         trans: &CH20Trans<P::G1>,
     ) -> CH20Proof<P> {
-        let mut rng = thread_rng();
         let s_hat: Vec<P::ScalarField> = (0..(lang.wit_size()))
-            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+            .map(|_i| <P::ScalarField as UniformRand>::rand(rng))
             .collect();
 
         let a_prime_e1: Vec<P::G1> = mul_mat_by_vec_f_g(
@@ -243,14 +248,13 @@ impl<P: Pairing> CH20Proof<P> {
                 .a
                 .clone()
                 .into_iter()
-                .chain(inst.0.clone())
+                .chain(inst.instance.clone())
                 .collect::<Vec<P::G1>>(),
         );
         let a_prime_e2: Vec<P::G1> = trans.t_aa.clone();
 
-        let inst_prime = trans.update_instance(inst);
-        let mat_prime = lang.instantiate_matrix(&inst_prime.0);
-        let a_prime_e3: Vec<P::G1> = mul_mat_by_vec_g_f(&mat_prime, &s_hat);
+        let inst_prime = trans.update_instance(lang, inst);
+        let a_prime_e3: Vec<P::G1> = mul_mat_by_vec_g_f(&inst_prime.matrix, &s_hat);
 
         let a_prime: Vec<P::G1> = a_prime_e1
             .into_iter()
@@ -330,8 +334,8 @@ impl<G: Group> CH20Trans<G> {
         }
     }
 
-    pub fn update_instance(&self, inst: &AlgInst<G>) -> AlgInst<G> {
-        let inst_prime_e1: Vec<G> = mul_mat_by_vec_f_g(&self.t_xm, &inst.0);
+    pub fn update_instance(&self, language: &AlgLang<G>, inst: &AlgInst<G>) -> AlgInst<G> {
+        let inst_prime_e1: Vec<G> = mul_mat_by_vec_f_g(&self.t_xm, &inst.instance);
         let inst_prime_e2: Vec<G> = self.t_xa.clone();
 
         let inst_prime: Vec<G> = inst_prime_e1
@@ -340,7 +344,7 @@ impl<G: Group> CH20Trans<G> {
             .map(|(x, y)| x + y)
             .collect();
 
-        AlgInst(inst_prime)
+        AlgInst::new(language, inst_prime)
     }
 
     pub fn update_witness(&self, wit: &AlgWit<G>) -> AlgWit<G> {
@@ -365,12 +369,14 @@ impl<G: Group> CH20Trans<G> {
         inst: &AlgInst<G>,
         s: Vec<G::ScalarField>,
     ) -> bool {
-        let matrix1 = lang.instantiate_matrix(&inst.0);
-        let mx_s = mul_mat_by_vec_g_f(&matrix1, &s);
+        let mx_s = mul_mat_by_vec_g_f(&inst.matrix, &s);
 
         let lhs_term1 = mul_mat_by_vec_f_g(
             &self.t_am,
-            &mx_s.into_iter().chain(inst.0.clone()).collect::<Vec<G>>(),
+            &mx_s
+                .into_iter()
+                .chain(inst.instance.clone())
+                .collect::<Vec<G>>(),
         );
 
         let lhs: Vec<G> = lhs_term1
@@ -379,11 +385,10 @@ impl<G: Group> CH20Trans<G> {
             .map(|(x, y)| x + y)
             .collect();
 
-        let inst2 = self.update_instance(inst);
-        let matrix2 = lang.instantiate_matrix(&inst2.0);
+        let inst2 = self.update_instance(lang, inst);
         let s2 = self.update_witness(&AlgWit(s));
 
-        let rhs = mul_mat_by_vec_g_f(&matrix2, &s2.0);
+        let rhs = mul_mat_by_vec_g_f(&inst2.matrix, &s2.0);
 
         if rhs != lhs {
             println!("Not blinding compatible, indices:");
@@ -440,13 +445,13 @@ pub(crate) mod tests {
         ];
 
         let lang: AlgLang<CG1> = AlgLang { matrix };
-        let inst: AlgInst<CG1> = AlgInst(vec![gx, gy, gz]);
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gy, gz]);
         let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
 
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
 
-        let crs: CH20CRS<CC> = CH20CRS::setup(&mut thread_rng());
+        let crs: CH20CRS<CC> = CH20CRS::setup(&mut rng);
         let proof: CH20Proof<CC> = CH20Proof::prove(&mut rng, &crs, &lang, &inst, &wit);
         let res = proof.verify(&crs, &lang, &inst);
         println!("Verification result: {:?}", res);
@@ -482,14 +487,14 @@ pub(crate) mod tests {
 
         let blinding_compatible = trans.is_blinding_compatible(&lang, &inst);
         println!("Transformaion blinding compatible? {blinding_compatible:?}");
-        let inst2 = trans.update_instance(&inst);
+        let inst2 = trans.update_instance(&lang, &inst);
         let wit2 = trans.update_witness(&wit);
         let blinding_compatible2 = trans.is_blinding_compatible(&lang, &inst2);
         println!(":#? {:#?}", inst2);
         println!("Transformaion blinding compatible wrt new inst? {blinding_compatible2:?}");
         let lang_valid_2 = lang.contains(&inst2, &wit2);
         println!("Transformed language valid? {lang_valid_2:?}");
-        let proof2 = proof.update(&crs, &lang, &inst, &trans);
+        let proof2 = proof.update(&mut rng, &crs, &lang, &inst, &trans);
         let res2 = proof2.verify(&crs, &lang, &inst2);
         println!("Transformed proof valid?: {:?}", res2);
     }

@@ -105,16 +105,19 @@ pub fn escrow_gen_inst_from_wit<G: Group>(
     let escrow1: G = prod_a * wit.0[2]; // PA * b
     let escrow2: G = prod_d * wit.0[2] + prod_w * wit.0[4]; // PD * b + PW * ba
 
-    AlgInst(vec![
-        u,
-        b,
-        g * G::ScalarField::zero(),
-        escrow1,
-        escrow2,
-        prod_a,
-        prod_d,
-        prod_w,
-    ])
+    AlgInst::new(
+        &escrow_lang(g, h_com),
+        vec![
+            u,
+            b,
+            g * G::ScalarField::zero(),
+            escrow1,
+            escrow2,
+            prod_a,
+            prod_d,
+            prod_w,
+        ],
+    )
 }
 
 pub fn trace_lang<G: Group>(g: G, h_com: G) -> AlgLang<G> {
@@ -160,7 +163,7 @@ pub(crate) mod tests {
         let T: CG1 = G * t + Hcom * rt;
 
         let lang: AlgLang<CG1> = key_lang(G, Hcom);
-        let inst: AlgInst<CG1> = AlgInst(vec![H, B01, T]); //
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![H, B01, T]); //
         let wit: AlgWit<CG1> = AlgWit(vec![sk, t, r01, rt]);
 
         let lang_valid = lang.contains(&inst, &wit);
@@ -190,7 +193,7 @@ pub(crate) mod tests {
         let wit: AlgWit<CG1> = escrow_gen_wit(&mut rng);
         let inst: AlgInst<CG1> = escrow_gen_inst_from_wit(G, H, PA, PD, PW, &wit);
 
-        println!("inst {:?}", lang.instantiate_matrix(&inst.0));
+        println!("inst {:?}", inst.matrix);
 
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
@@ -211,7 +214,7 @@ pub(crate) mod tests {
         let Ci: CG1 = G * xi + H * ri;
 
         let lang: AlgLang<CG1> = trace_lang(G, H);
-        let inst: AlgInst<CG1> = AlgInst(vec![Xi - Xi1, Ci, H]); //
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![Xi - Xi1, Ci, H]); //
         let wit: AlgWit<CG1> = AlgWit(vec![xi, rxi, ri]);
 
         let lang_valid = lang.contains(&inst, &wit);

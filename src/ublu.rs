@@ -8,9 +8,9 @@ use ark_std::{One, Zero};
 use rand::RngCore;
 
 use crate::{
-    ch20::{AlgInst, AlgWit, CH20Proof, CH20Trans, CH20CRS},
+    ch20::{AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
-    consistency,
+    consistency::{self},
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
     languages::{escrow_lang, key_lang, trace_lang},
     sigma::SigmaProof,
@@ -29,6 +29,10 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     pedersen: PedersenParams<P::G1>,
     ch20crs: CH20CRS<P>,
     stirling: Vec<P::ScalarField>,
+    escrow_lang: AlgLang<P::G1>,
+    // consistency_lang: AlgLang<P::G1>,
+    trace_lang: AlgLang<P::G1>,
+    pk_lang: AlgLang<P::G1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,6 +55,8 @@ pub struct PublicKey<P: Pairing> {
     h: P::G1,
     com_t: Comm<P::G1>,
     proof_pk: PkProof<P>,
+    consistency_lang: AlgLang<P::G1>,
+    consistency_core_lang: AlgLang<P::G1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -71,6 +77,7 @@ pub struct Tag<P: Pairing> {
     com: Comm<P::G1>,
 }
 
+// TODO delete
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct XC<P: Pairing> {
     h: P::G1,
@@ -80,6 +87,7 @@ pub struct XC<P: Pairing> {
     old_ciphers: Vec<Cipher<P::G1>>,
 }
 
+// TODO delete
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WC<P: Pairing> {
     x: usize,
@@ -134,6 +142,9 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             com_h,
             rng,
             stirling,
+            escrow_lang: escrow_lang(g, com_h),
+            trace_lang: trace_lang(g, com_h),
+            pk_lang: key_lang(g, com_h),
         }
     }
 
@@ -159,15 +170,14 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
 
         let proof_pk = {
-            let lang = key_lang(self.g, self.com_h);
-            let inst = AlgInst(vec![pk.h, ciphers[0].b, com_t.com.value]); //B01
+            let inst = AlgInst::new(&self.pk_lang, vec![pk.h, ciphers[0].b, com_t.com.value]); //B01
             let wit = AlgWit(vec![sk.sk, P::ScalarField::from(t), r_vec[0], r_t]);
-            assert!(lang.contains(&inst, &wit));
-            let proof = SigmaProof::prove(&lang, &inst, &wit);
+            assert!(self.pk_lang.contains(&inst, &wit));
+            let proof = SigmaProof::prove(&self.pk_lang, &inst, &wit);
             PkProof { proof }
         };
 
-        let proof_c = {
+        let (proof_c, consistency_core_lang, consistency_lang) = {
             let x: P::ScalarField = From::from(0u64);
             let r_x: P::ScalarField = From::from(0u64);
             let alpha: P::ScalarField = From::from(0u64);
@@ -190,17 +200,22 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             );
             let inst = consistency::consistency_wit_to_inst(self.g, &hs, self.d, &wit);
 
-            let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
+            let consistency_lang = consistency::consistency_lang(self.g, &hs, self.d);
+            let consistency_core_lang = consistency::consistency_core_lang(self.g, &hs, self.d);
 
             let inst_core = consistency::consistency_inst_to_core(self.d, &inst);
             let wit_core = consistency::consistency_wit_to_core(&wit);
 
-            CH20Proof::prove(
-                &mut self.rng,
-                &self.ch20crs,
-                &lang_core,
-                &inst_core,
-                &wit_core,
+            (
+                CH20Proof::prove(
+                    &mut self.rng,
+                    &self.ch20crs,
+                    &consistency_core_lang,
+                    &AlgInst::new(&consistency_core_lang, inst_core),
+                    &wit_core,
+                ),
+                consistency_core_lang,
+                consistency_lang,
             )
         };
 
@@ -209,6 +224,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 h: pk.h,
                 com_t: com_t.com,
                 proof_pk,
+                consistency_lang,
+                consistency_core_lang,
             },
             SecretKey { elgamal_sk: sk },
             Hint {
@@ -232,9 +249,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         // @volhovm: we don't need to check any proofs in update according to our semantics
         // This proof is not supposed to pass w.r.t. hint_i, only w.r.t. hint_0.
         if old_tag.is_none() {
-            let lang = key_lang(self.g, self.com_h);
-            let inst = AlgInst(vec![pk.h, hint.ciphers[0].b, pk.com_t.value]);
-            assert!(pk.proof_pk.proof.verify(&lang, &inst).is_ok());
+            let inst = AlgInst::new(&self.pk_lang, vec![pk.h, hint.ciphers[0].b, pk.com_t.value]);
+            assert!(pk.proof_pk.proof.verify(&self.pk_lang, &inst).is_ok());
         };
 
         let new_hint = self.update_hint(pk, hint, x, &r_x);
@@ -251,28 +267,30 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             // - pi_{t,0} does not exist, however we can assume pi_{t,0} is some constant "dummy" value,
             //  e.g. SigmaProof { vec![], vec![] }. Remember that we "bind" the previous
             // trace proof by absorbing it into the Fiat Shamir hash, so it can be anything.
-            let lang = trace_lang(self.g, self.com_h);
 
             assert_eq!(
                 hint.com_x.value + self.g * P::ScalarField::from(x as u64) + self.com_h * r_x,
                 new_hint.com_x.value
             );
-            let inst = AlgInst(vec![
-                new_hint.com_x.value - hint.com_x.value,
-                ext_com.com.value,
-                pk.h,
-            ]);
+            let inst = AlgInst::new(
+                &self.trace_lang,
+                vec![
+                    new_hint.com_x.value - hint.com_x.value,
+                    ext_com.com.value,
+                    pk.h,
+                ],
+            );
             let wit = AlgWit(vec![P::ScalarField::from(x as u64), r_x, r_got]);
-            assert!(lang.contains(&inst, &wit));
+            assert!(self.trace_lang.contains(&inst, &wit));
 
             match old_tag.is_none() {
                 false => {
                     let prev_proof = &old_tag.to_owned().unwrap().proof.proof;
-                    SigmaProof::sok(&lang, &inst, &wit, prev_proof)
+                    SigmaProof::sok(&self.trace_lang, &inst, &wit, prev_proof)
                 }
                 true => {
                     let prev_proof = &pk.proof_pk.proof;
-                    SigmaProof::sok(&lang, &inst, &wit, prev_proof)
+                    SigmaProof::sok(&self.trace_lang, &inst, &wit, prev_proof)
                 }
             }
         };
@@ -315,7 +333,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .flat_map(|Cipher { a, b }| vec![a, b])
                 .collect();
 
-            let inst_core = AlgInst(
+            let inst_core = AlgInst::new(
+                &pk.consistency_core_lang,
                 vec![pk.com_t.value, old_hint.com_x.value]
                     .into_iter()
                     .chain(flat_old_ciphers)
@@ -323,7 +342,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                     .collect(),
             );
 
-            let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
             let trans_core: CH20Trans<P::G1> = consistency::consistency_core_trans(
                 self.g,
                 &hs,
@@ -333,9 +351,13 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 r_i_list.clone(),
             );
 
-            old_hint
-                .proof_c
-                .update(&self.ch20crs, &lang_core, &inst_core, &trans_core)
+            old_hint.proof_c.update(
+                &mut self.rng,
+                &self.ch20crs,
+                &pk.consistency_core_lang,
+                &inst_core,
+                &trans_core,
+            )
         };
 
         Hint {
@@ -438,26 +460,31 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .flat_map(|Cipher { a, b }| vec![a, b])
                 .collect();
 
-            let inst_core = AlgInst(
+            let inst_core = AlgInst::new(
+                &pk.consistency_core_lang,
                 vec![pk.com_t.value, randomized_hint.com_x.value]
                     .into_iter()
                     .chain(flat_old_ciphers)
                     .chain(vec![P::G1::zero(); self.d])
                     .collect(),
             );
-            let inst_gen = consistency::generalise_inst(self.d, inst_core);
+            let inst_gen = consistency::generalise_inst(&pk.consistency_lang, self.d, inst_core);
 
             let proof_gen = consistency::generalise_proof(self.d, randomized_hint.proof_c.clone());
-            let lang_full = consistency::consistency_lang(self.g, &hs, self.d);
 
             let trans_blind: CH20Trans<P::G1> =
                 consistency::consistency_blind_trans(self.g, &hs, self.d, r_i_list, alpha, r_alpha);
 
-            proof_gen.update(&self.ch20crs, &lang_full, &inst_gen, &trans_blind)
+            proof_gen.update(
+                &mut self.rng,
+                &self.ch20crs,
+                &pk.consistency_lang,
+                &inst_gen,
+                &trans_blind,
+            )
         };
 
         let proof_e = {
-            let lang = escrow_lang(self.g, self.com_h);
             let betaalpha = beta * alpha;
             let r_betaalpha = r_beta * alpha;
             let wit = AlgWit(vec![alpha, r_alpha, beta, r_beta, betaalpha, r_betaalpha]);
@@ -471,18 +498,21 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             }
             assert_eq!(escrow_enc.a, prod_a * beta);
             assert_eq!(escrow_enc.b, prod_d * beta + prod_w * (beta * alpha));
-            let inst = AlgInst(vec![
-                com_alpha.value,
-                com_beta.value,
-                P::G1::zero(),
-                escrow_enc.a,
-                escrow_enc.b,
-                prod_a,
-                prod_d,
-                prod_w,
-            ]);
-            assert!(lang.contains(&inst, &wit));
-            SigmaProof::prove(&lang, &inst, &wit)
+            let inst = AlgInst::new(
+                &self.escrow_lang,
+                vec![
+                    com_alpha.value,
+                    com_beta.value,
+                    P::G1::zero(),
+                    escrow_enc.a,
+                    escrow_enc.b,
+                    prod_a,
+                    prod_d,
+                    prod_w,
+                ],
+            );
+            assert!(self.escrow_lang.contains(&inst, &wit));
+            SigmaProof::prove(&self.escrow_lang, &inst, &wit)
         };
 
         Escrow {
@@ -537,9 +567,11 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             return false;
         };
         {
-            let lang = key_lang(self.g, self.com_h);
-            let inst = AlgInst(vec![pk.h, hint0.ciphers[0].b, pk.com_t.value]);
-            if pk.proof_pk.proof.verify(&lang, &inst).is_err() {
+            let inst = AlgInst::new(
+                &self.pk_lang,
+                vec![pk.h, hint0.ciphers[0].b, pk.com_t.value],
+            );
+            if pk.proof_pk.proof.verify(&self.pk_lang, &inst).is_err() {
                 println!("Issue2");
                 return false;
             }
@@ -559,7 +591,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .flat_map(|Cipher { a, b }| vec![a, b])
                 .collect();
 
-            let inst_core = AlgInst(
+            let inst_core = AlgInst::new(
+                &pk.consistency_core_lang,
                 vec![pk.com_t.value, xcal]
                     .into_iter()
                     .chain(ab_s)
@@ -567,11 +600,9 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                     .collect(),
             );
 
-            let lang_core = consistency::consistency_core_lang(self.g, &hs, self.d);
-
             if hint0
                 .proof_c
-                .verify(&self.ch20crs, &lang_core, &inst_core)
+                .verify(&self.ch20crs, &pk.consistency_core_lang, &inst_core)
                 .is_err()
             {
                 println!("Issue3");
@@ -585,17 +616,22 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     pub fn verify_history(&self, pk: &PublicKey<P>, history: Vec<(Tag<P>, Comm<P::G1>)>) -> bool {
         let mut old_com_x = P::G1::zero();
         for (i, (tag_i, com_i)) in history.iter().enumerate() {
-            let lang = trace_lang(self.g, self.com_h);
-            let inst = AlgInst(vec![tag_i.com.value - old_com_x, com_i.value, pk.h]);
+            let inst = AlgInst::new(
+                &self.trace_lang,
+                vec![tag_i.com.value - old_com_x, com_i.value, pk.h],
+            );
             let proof = &tag_i.proof.proof;
 
             if i == 0 {
-                if proof.verify_sig(&lang, &inst, &pk.proof_pk.proof).is_err() {
+                if proof
+                    .verify_sig(&self.trace_lang, &inst, &pk.proof_pk.proof)
+                    .is_err()
+                {
                     println!("First proof failed");
                     return false;
                 }
             } else if proof
-                .verify_sig(&lang, &inst, &history[i - 1].0.proof.proof)
+                .verify_sig(&self.trace_lang, &inst, &history[i - 1].0.proof.proof)
                 .is_err()
             {
                 println!("Proof #{i:?} failed");
@@ -622,7 +658,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .flat_map(|Cipher { a, b }| vec![a, b])
             .collect();
 
-        let inst_core = AlgInst(
+        let inst_core = AlgInst::new(
+            &pk.consistency_core_lang,
             vec![pk.com_t.value, tag.com.value]
                 .into_iter()
                 .chain(ab_s)
@@ -655,7 +692,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .flat_map(|Cipher { a, b }| vec![a, b])
                 .collect();
 
-            let inst_full = AlgInst(
+            let inst_full = AlgInst::new(
+                &pk.consistency_lang,
                 vec![pk.com_t.value, tag.com.value, escrow.com_alpha.value]
                     .into_iter()
                     .chain(ab_s)
@@ -742,6 +780,7 @@ pub(crate) mod tests {
         run_updates(7);
         run_updates(8);
     }
+
     #[test]
     fn test_verify_key_gen() {
         let rng = AesRng::seed_from_u64(1);

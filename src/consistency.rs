@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::needless_range_loop)]
+use std::vec;
+
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{One, Zero};
 use ark_std::UniformRand;
@@ -88,7 +90,7 @@ pub fn consistency_core_lang<G: Group>(g: G, hs: &[G], d: usize) -> AlgLang<G> {
     AlgLang { matrix: matrix2 }
 }
 
-pub fn consistency_wit_to_inst<G: Group>(g: G, hs: &[G], d: usize, wit: &AlgWit<G>) -> AlgInst<G> {
+pub fn consistency_wit_to_inst<G: Group>(g: G, hs: &[G], d: usize, wit: &AlgWit<G>) -> Vec<G> {
     let t: G::ScalarField = wit.0[0];
     let r_t: G::ScalarField = wit.0[1];
     let x: G::ScalarField = wit.0[2];
@@ -113,13 +115,11 @@ pub fn consistency_wit_to_inst<G: Group>(g: G, hs: &[G], d: usize, wit: &AlgWit<
         .flat_map(|(ai, di)| vec![ai, di])
         .collect();
 
-    AlgInst(
-        vec![tcal, xcal, acal]
-            .into_iter()
-            .chain(ad_s)
-            .chain(vec![G::zero(); d + 1])
-            .collect(),
-    )
+    vec![tcal, xcal, acal]
+        .into_iter()
+        .chain(ad_s)
+        .chain(vec![G::zero(); d + 1])
+        .collect()
 }
 
 pub fn consistency_form_wit<G: Group>(
@@ -159,6 +159,7 @@ pub fn consistency_form_wit<G: Group>(
 }
 
 pub fn consistency_gen_inst_wit<G: Group, RNG: RngCore>(
+    lang: &AlgLang<G>,
     g: G,
     hs: &[G],
     d: usize,
@@ -175,13 +176,13 @@ pub fn consistency_gen_inst_wit<G: Group, RNG: RngCore>(
     let wit = consistency_form_wit(d, t, r_t, x, r_x, alpha, r_alpha, rs);
     let inst = consistency_wit_to_inst(g, hs, d, &wit);
 
-    (inst, wit)
+    (AlgInst::new(lang, inst), wit)
 }
 
-pub fn consistency_inst_to_core<G: Group>(d: usize, inst: &AlgInst<G>) -> AlgInst<G> {
-    let mut inst_core = inst.clone();
-    inst_core.0.remove(4 + 2 * d);
-    inst_core.0.remove(2);
+pub fn consistency_inst_to_core<G: Group>(d: usize, inst: &[G]) -> Vec<G> {
+    let mut inst_core = inst.to_vec();
+    inst_core.remove(4 + 2 * d);
+    inst_core.remove(2);
     inst_core
 }
 
@@ -196,17 +197,18 @@ pub fn consistency_wit_to_core<G: Group>(wit: &AlgWit<G>) -> AlgWit<G> {
 }
 
 pub fn consistency_core_gen_inst_wit<G: Group, RNG: RngCore>(
+    lang: &AlgLang<G>,
     g: G,
     hs: &[G],
     d: usize,
     rng: &mut RNG,
 ) -> (AlgInst<G>, AlgWit<G>) {
-    let (inst, wit) = consistency_gen_inst_wit(g, hs, d, rng);
+    let (inst, wit) = consistency_gen_inst_wit(lang, g, hs, d, rng);
 
-    let inst_core = consistency_inst_to_core(d, &inst);
+    let inst_core = consistency_inst_to_core(d, &inst.instance);
     let wit_core = consistency_wit_to_core(&wit);
 
-    (inst_core, wit_core)
+    (AlgInst::new(lang, inst_core), wit_core)
 }
 
 pub fn consistency_trans<G: Group>(
@@ -467,13 +469,28 @@ pub fn generalise_proof<P: Pairing>(d: usize, proof: CH20Proof<P>) -> CH20Proof<
 }
 
 /// Same as `generalise_proof` but for instance.
-pub fn generalise_inst<G: Group>(d: usize, inst: AlgInst<G>) -> AlgInst<G> {
-    assert!(inst.0.len() == 3 * d + 2);
+pub fn generalise_inst<G: Group>(lang: &AlgLang<G>, d: usize, inst: AlgInst<G>) -> AlgInst<G> {
+    assert!(inst.instance.len() == 3 * d + 2);
 
     let mut inst = inst.clone();
 
-    inst.0.insert(2, G::zero());
-    inst.0.insert(4 + 2 * d, G::zero());
+    inst.instance.insert(2, G::zero());
+    inst.instance.insert(4 + 2 * d, G::zero());
+
+    // TODO this can be done more efficiently
+    inst.matrix = lang.instantiate_matrix(&inst.instance);
+
+    // TODO the code below does not work since not all fields should be 0. I ran out of time trying to fix it.
+
+    // Number of witness elements
+    // let m = 2 * d + 8;
+    // let size = inst.matrix.len();
+    // let to_append = m - d - 1;
+    // inst.matrix.push(vec![G::zero(); m]);
+    // inst.matrix.push(vec![G::zero(); m]);
+    // for i in 0..size {
+    //     inst.matrix[i].append(&mut vec![G::zero(); to_append]);
+    // }
 
     inst
 }
@@ -491,7 +508,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     // "Base" language is consistent but only if we blind some randomness in s
     {
         let lang = consistency_lang(g, &hs, d);
-        let (inst, wit) = consistency_gen_inst_wit(g, &hs, d, &mut rng);
+        let (inst, wit) = consistency_gen_inst_wit(&lang, g, &hs, d, &mut rng);
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
 
@@ -512,7 +529,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     // Create an original proof
 
     let lang_core = consistency_core_lang(g, &hs, d);
-    let (inst_core, wit_core) = consistency_core_gen_inst_wit(g, &hs, d, &mut rng);
+    let (inst_core, wit_core) = consistency_core_gen_inst_wit(&lang_core, g, &hs, d, &mut rng);
 
     let lang_core_valid = lang_core.contains(&inst_core, &wit_core);
     println!("Language (core) valid? {lang_core_valid:?}");
@@ -530,7 +547,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     let blinding_compatible = trans_core.is_blinding_compatible(&lang_core, &inst_core);
     println!("Transformaion (core) blinding compatible? {blinding_compatible:?}");
     assert!(blinding_compatible);
-    let inst_core2 = trans_core.update_instance(&inst_core);
+    let inst_core2 = trans_core.update_instance(&lang_core, &inst_core);
     let wit_core2 = trans_core.update_witness(&wit_core);
     let blinding_compatible2 = trans_core.is_blinding_compatible(&lang_core, &inst_core2);
     println!("Transformaion (core) blinding compatible wrt new inst? {blinding_compatible2:?}");
@@ -539,7 +556,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     println!("Transformed language valid? {lang_valid2:?}");
     assert!(lang_valid2);
 
-    let proof2 = proof.update(&crs, &lang_core, &inst_core, &trans_core);
+    let proof2 = proof.update(&mut rng, &crs, &lang_core, &inst_core, &trans_core);
     let res2 = proof2.verify(&crs, &lang_core, &inst_core2);
     println!("Transformed proof valid?: {:?}", res2);
     assert!(res2.is_ok());
@@ -548,15 +565,15 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
 
     let lang_gen = consistency_lang(g, &hs, d);
     let proof_gen = generalise_proof(d, proof2);
-    let inst_gen = generalise_inst(d, inst_core2);
+    let inst_gen = generalise_inst(&lang_gen, d, inst_core2);
     let res_gen = proof_gen.verify(&crs, &lang_gen, &inst_gen);
     println!("Transformed generalised proof valid?: {:?}", res_gen);
     assert!(res_gen.is_ok());
 
     let trans_blind: CH20Trans<P::G1> = consistency_blind_trans_rand(g, &hs, d, &mut rng);
-    let proof_blinded = proof_gen.update(&crs, &lang_gen, &inst_gen, &trans_blind);
+    let proof_blinded = proof_gen.update(&mut rng, &crs, &lang_gen, &inst_gen, &trans_blind);
 
-    let inst_blinded = trans_blind.update_instance(&inst_gen);
+    let inst_blinded = trans_blind.update_instance(&lang_gen, &inst_gen);
     let res_blinded = proof_blinded.verify(&crs, &lang_gen, &inst_blinded);
     println!(
         "Transformed generalised blinded proof valid?: {:?}",

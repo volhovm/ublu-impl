@@ -709,39 +709,39 @@ pub(crate) mod tests {
         let t = 7;
 
         let mut ublu: Ublu<Bls12_381, _> = Ublu::setup(lambda, d, rand::thread_rng());
-        let (pk, sk, mut hint_pre) = ublu.key_gen(t);
-        let mut tag_pre = None;
 
-        let mut runfoo = |x_update: u32| {
+        let mut run_updates = |x_update: u32| {
+            let (pk, sk, mut hint_pre) = ublu.key_gen(t);
+            let mut tag_pre = None;
             let mut cur_acc_x = 0;
             for i in 0..5 {
                 let r_got = CF::rand(&mut rand::thread_rng());
                 let (hint_cur, tag_cur) =
                     ublu.update(&pk, &hint_pre, &tag_pre, x_update as usize, r_got);
                 assert!(ublu.verify_hint(&pk, &hint_cur, &tag_cur));
-                println!("Update step i={i:?}");
+                println!("Update step i={i:?} for x={x_update:?}");
                 let escrow = ublu.escrow(&pk, &hint_cur);
                 cur_acc_x += x_update;
                 assert!(ublu.verify_escrow(&pk, &escrow, &tag_cur));
-                assert!(
-                    ublu.decrypt(&sk, &escrow) == (cur_acc_x >= t && cur_acc_x < (t + d as u32))
-                );
                 println!("Escrow decryption result: {:?}", ublu.decrypt(&sk, &escrow));
+                assert_eq!(
+                    ublu.decrypt(&sk, &escrow),
+                    (cur_acc_x >= t && cur_acc_x < (t + d as u32))
+                );
                 hint_pre = hint_cur.clone();
                 tag_pre = Some(tag_cur.clone());
             }
         };
 
-        runfoo(1);
-        runfoo(2);
-        runfoo(3);
-        runfoo(4);
-        runfoo(5);
-        runfoo(6);
-        runfoo(7);
-        runfoo(8);
+        run_updates(1);
+        run_updates(2);
+        run_updates(3);
+        run_updates(4);
+        run_updates(5);
+        run_updates(6);
+        run_updates(7);
+        run_updates(8);
     }
-
     #[test]
     fn test_verify_key_gen() {
         let rng = AesRng::seed_from_u64(1);

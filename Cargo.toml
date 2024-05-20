@@ -17,3 +17,10 @@ anyhow = "~1.0"
 ark-transcript = "0.0.1"
 stirling_numbers = "0.1.7"
 ark-serialize = { version = "0.4.2", features = ["derive"] }
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "timings"
+harness = false

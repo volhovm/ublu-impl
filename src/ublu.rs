@@ -195,7 +195,13 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let inst_core = consistency::consistency_inst_to_core(self.d, &inst);
             let wit_core = consistency::consistency_wit_to_core(&wit);
 
-            CH20Proof::prove(&self.ch20crs, &lang_core, &inst_core, &wit_core)
+            CH20Proof::prove(
+                &mut self.rng,
+                &self.ch20crs,
+                &lang_core,
+                &inst_core,
+                &wit_core,
+            )
         };
 
         (

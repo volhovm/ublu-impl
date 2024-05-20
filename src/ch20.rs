@@ -169,6 +169,7 @@ pub enum CH20VerifierError {
 
 impl<P: Pairing> CH20Proof<P> {
     pub fn prove(
+        rng: &mut dyn RngCore,
         crs: &CH20CRS<P>,
         lang: &AlgLang<P::G1>,
         inst: &AlgInst<P::G1>,
@@ -177,9 +178,8 @@ impl<P: Pairing> CH20Proof<P> {
     where
         P::ScalarField: UniformRand,
     {
-        let mut rng = thread_rng();
         let r: Vec<P::ScalarField> = (0..(lang.wit_size()))
-            .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
+            .map(|_i| <P::ScalarField as UniformRand>::rand(rng))
             .collect();
         let matrix = lang.instantiate_matrix(&inst.0);
         let a: Vec<P::G1> = mul_mat_by_vec_g_f(&matrix, &r);
@@ -447,7 +447,7 @@ pub(crate) mod tests {
         println!("Language valid? {lang_valid:?}");
 
         let crs: CH20CRS<CC> = CH20CRS::setup(&mut thread_rng());
-        let proof: CH20Proof<CC> = CH20Proof::prove(&crs, &lang, &inst, &wit);
+        let proof: CH20Proof<CC> = CH20Proof::prove(&mut rng, &crs, &lang, &inst, &wit);
         let res = proof.verify(&crs, &lang, &inst);
         println!("Verification result: {:?}", res);
 

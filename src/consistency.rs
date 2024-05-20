@@ -519,7 +519,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     assert!(lang_core_valid);
 
     let crs: CH20CRS<P> = CH20CRS::setup(&mut thread_rng());
-    let proof: CH20Proof<P> = CH20Proof::prove(&crs, &lang_core, &inst_core, &wit_core);
+    let proof: CH20Proof<P> = CH20Proof::prove(&mut rng, &crs, &lang_core, &inst_core, &wit_core);
     let res = proof.verify(&crs, &lang_core, &inst_core);
     println!("Verification result: {:?}", res);
     assert!(res.is_ok());

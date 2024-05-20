@@ -31,13 +31,11 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     stirling: Vec<P::ScalarField>,
 }
 
-//TODO placeholder
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PkProof<P: Pairing> {
     proof: SigmaProof<P::G1>,
 }
 
-//TODO placeholder
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TagProof<P: Pairing> {
     proof: SigmaProof<P::G1>,
@@ -238,7 +236,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let ext_com = self
             .pedersen
             .commit_raw(&P::ScalarField::from(x as u64), &r_got);
-        // TODO do the proofs
 
         let proof_t = {
             // @Misha: how does this work when there is no initial tag or tag proof? i.e. in the first update case.
@@ -298,23 +295,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         // TODO can probably be optimized a bit by modifying cipherts in place
         let new_ciphers =
             self.update_powers(old_hint.ciphers.clone(), r_i_list.clone(), x_field, pk.h);
-        // let com_u = self
-        //     .pedersen
-        //     .commit_raw(&P::ScalarField::from(0_u32), &P::ScalarField::from(0_u32));
-        // let _xc: XC<P> = XC {
-        //     h: pk.h,
-        //     comt_t: pk.com_t.clone(),
-        //     old_com_x: old_hint.com_x.clone(),
-        //     com_u: com_u.com,
-        //     old_ciphers: old_hint.ciphers.clone(),
-        // };
-        // let _wc: WC<P> = WC {
-        //     x,
-        //     r_list: r_i_list.clone(),
-        //     r_x: *r_x,
-        //     alpha: P::ScalarField::zero(),
-        //     r_alpha: P::ScalarField::zero(),
-        // };
 
         let pi_c: CH20Proof<P> = {
             let hs: Vec<P::G1> = [self.com_h, pk.h]
@@ -371,7 +351,6 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let mut new_ciphers: Vec<Cipher<P::G1>> = vec![];
 
         for i in 0..old_ciphers.len() {
-            // TODO fails with negative subtraction because the j's should only iterate up to i, but goes all the way to d
             let a = old_ciphers
                 .iter()
                 .take(i + 1)
@@ -396,40 +375,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         new_ciphers
     }
 
-    pub fn update_powers2(
-        &self,
-        old_ciphers: Vec<Cipher<P::G1>>,
-        r_i_list: Vec<P::ScalarField>,
-        x_field: P::ScalarField,
-        pk_h: P::G1,
-    ) -> Vec<Cipher<P::G1>> {
-        let mut new_ciphers = Vec::with_capacity(self.d);
-        for i in 1..=self.d {
-            let mut cur_a_res = P::G1::zero();
-            let mut cur_b_res = self.g * field_pow(x_field, i);
-            for j in 1..=i {
-                let cur_v_val = Self::v_func(x_field, i, j);
-                cur_a_res += old_ciphers.get(j - 1).unwrap().a * cur_v_val;
-                cur_b_res += old_ciphers.get(j - 1).unwrap().b * cur_v_val;
-            }
-            cur_a_res += self.g * r_i_list.get(i - 1).unwrap();
-            cur_b_res += pk_h * r_i_list.get(i - 1).unwrap();
-            new_ciphers.push(Cipher {
-                a: cur_a_res,
-                b: cur_b_res,
-            });
-        }
-        new_ciphers
-    }
-
-    fn v_func(x: P::ScalarField, i: usize, j: usize) -> P::ScalarField {
-        field_pow(x, i - j) * P::ScalarField::from(binomial(i, j) as u64)
-    }
-
     fn randomize_ciphers(
         &self,
         old_ciphers: &[Cipher<P::G1>],
-        r_i_list: &Vec<P::ScalarField>,
+        r_i_list: &[P::ScalarField],
         pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
         let mut new_ciphers: Vec<_> = old_ciphers.to_vec();
@@ -453,7 +402,8 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
     }
 
     pub fn escrow(&mut self, pk: &PublicKey<P>, hint: &Hint<P>) -> Escrow<P> {
-        // TODO add rerandomizing of the hint
+        let randomized_hint = self.update_hint(pk, hint, 0, &P::ScalarField::from(0_u32));
+
         let alpha = P::ScalarField::rand(&mut self.rng);
         let r_alpha = P::ScalarField::rand(&mut self.rng);
         let beta = P::ScalarField::rand(&mut self.rng);
@@ -465,7 +415,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let r_i_list: Vec<_> = (0..self.d)
             .map(|_| P::ScalarField::rand(&mut self.rng))
             .collect();
-        let rerand_ciphers = self.randomize_ciphers(&hint.ciphers, &r_i_list, pk.h);
+        let rerand_ciphers = self.randomize_ciphers(&randomized_hint.ciphers, &r_i_list, pk.h);
         let blinded_ciphers = self.blind_powers(&rerand_ciphers, alpha);
         let escrow_enc = self.evaluate(&rerand_ciphers, beta);
 
@@ -475,7 +425,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .chain(self.w.clone())
                 .collect();
 
-            let flat_old_ciphers: Vec<P::G1> = hint
+            let flat_old_ciphers: Vec<P::G1> = randomized_hint
                 .ciphers
                 .clone()
                 .into_iter()
@@ -483,7 +433,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 .collect();
 
             let inst_core = AlgInst(
-                vec![pk.com_t.value, hint.com_x.value]
+                vec![pk.com_t.value, randomized_hint.com_x.value]
                     .into_iter()
                     .chain(flat_old_ciphers)
                     .chain(vec![P::G1::zero(); self.d])
@@ -491,7 +441,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             );
             let inst_gen = consistency::generalise_inst(self.d, inst_core);
 
-            let proof_gen = consistency::generalise_proof(self.d, hint.proof_c.clone());
+            let proof_gen = consistency::generalise_proof(self.d, randomized_hint.proof_c.clone());
             let lang_full = consistency::consistency_lang(self.g, &hs, self.d);
 
             let trans_blind: CH20Trans<P::G1> =
@@ -532,7 +482,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         Escrow {
             escrow_enc,
             blinded_ciphers,
-            com_x: hint.com_x.clone(),
+            com_x: randomized_hint.com_x.clone(),
             com_alpha,
             com_beta,
             proof_c,
@@ -890,7 +840,7 @@ pub(crate) mod tests {
         }
 
         let updated_ciphers =
-            ublu.update_powers2(init_ciphers, vec![CF::zero(); d], CF::from(x_update), pk.h);
+            ublu.update_powers(init_ciphers, vec![CF::zero(); d], CF::from(x_update), pk.h);
 
         {
             assert!(

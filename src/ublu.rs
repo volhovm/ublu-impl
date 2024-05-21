@@ -26,7 +26,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     com_h: P::G1,
     w: Vec<P::G1>,
     elgamal: ElgamalParams<P::G1>,
-    pedersen: PedersenParams<P::G1>,
+    pub pedersen: PedersenParams<P::G1>,
     ch20crs: CH20CRS<P>,
     stirling: Vec<P::ScalarField>,
     escrow_lang: AlgLang<P::G1>,

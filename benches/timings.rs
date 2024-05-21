@@ -13,7 +13,7 @@ use ublu_impl::{CC, CF, CG1};
 
 mod perf;
 
-static D_VALUES: [usize; 1] = [16]; // [2, 4, 8, 16, 32, 64];
+static D_VALUES: [usize; 6] = [2, 4, 8, 16, 32, 64];
 static T: u32 = 4;
 
 fn bench_setup(c: &mut Criterion) {
@@ -270,14 +270,14 @@ fn bench_decrypt(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
-    targets = //bench_vfhist,
+    targets = bench_vfhist,
     bench_setup,
-    /*bench_keygen,
+    bench_keygen,
     bench_keyver,
     bench_update,
     bench_vfhint,
     bench_escrow,
     bench_escrow_ver,
-    bench_decrypt,*/
+    bench_decrypt,
 }
 criterion_main!(benches);

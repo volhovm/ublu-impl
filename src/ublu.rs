@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
-use ark_std::{One, Zero};
+use ark_std::Zero;
 use rand::RngCore;
 
 use crate::{

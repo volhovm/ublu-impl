@@ -7,9 +7,9 @@ use ark_std::UniformRand;
 use criterion::*;
 use rand::rngs::ThreadRng;
 use rand::thread_rng;
+use ublu_impl::commitment::Comm;
 use ublu_impl::ublu::{Tag, Ublu};
 use ublu_impl::{CC, CF, CG1};
-use ublu_impl::commitment::Comm;
 
 mod perf;
 
@@ -124,8 +124,9 @@ fn bench_update(c: &mut Criterion) {
 
                     (ublu, pk, hint_pre, tag_pre, x, r_got)
                 },
-                |(mut ublu, pk, hint_pre, tag_pre, x, r_got)|
-                ublu.update(&pk, &hint_pre, &tag_pre, x, r_got) ,
+                |(mut ublu, pk, hint_pre, tag_pre, x, r_got)| {
+                    ublu.update(&pk, &hint_pre, &tag_pre, x, r_got)
+                },
                 BatchSize::SmallInput,
             )
         });
@@ -153,8 +154,7 @@ fn bench_vfhint(c: &mut Criterion) {
 
                     (ublu, pk, hint_cur, tag_cur)
                 },
-                |(mut ublu, pk, hint_cur, tag_cur)|
-                    ublu.verify_hint(&pk, &hint_cur, &tag_cur) ,
+                |(mut ublu, pk, hint_cur, tag_cur)| ublu.verify_hint(&pk, &hint_cur, &tag_cur),
                 BatchSize::SmallInput,
             )
         });
@@ -187,8 +187,10 @@ fn bench_vfhist(c: &mut Criterion) {
 
                     for i in 0..*d {
                         let r_got = CF::rand(&mut rng);
-                        let prev_tag: &Option<Tag<CC>> = &history.last().map(|(tag, _)| tag.clone());
-                        let (hint, tag) = ublu.update(&pk, hints.last().unwrap(), prev_tag, x_update, r_got);
+                        let prev_tag: &Option<Tag<CC>> =
+                            &history.last().map(|(tag, _)| tag.clone());
+                        let (hint, tag) =
+                            ublu.update(&pk, hints.last().unwrap(), prev_tag, x_update, r_got);
                         let ext_com = ublu
                             .pedersen
                             .commit_raw(&CF::from(x_update as u64), &r_got)
@@ -201,8 +203,7 @@ fn bench_vfhist(c: &mut Criterion) {
 
                     (ublu, pk, history)
                 },
-                |(mut ublu, pk, history)|
-                    ublu.verify_history(&pk, history) ,
+                |(mut ublu, pk, history)| ublu.verify_history(&pk, history),
                 BatchSize::SmallInput,
             )
         });
@@ -258,8 +259,7 @@ fn bench_decrypt(c: &mut Criterion) {
 
                     (ublu, sk, escrow)
                 },
-                |(ublu, sk, escrow)|
-                    ublu.decrypt(&sk, &escrow),
+                |(ublu, sk, escrow)| ublu.decrypt(&sk, &escrow),
                 BatchSize::SmallInput,
             )
         });

@@ -1,7 +1,6 @@
 //#[macro_use]
 extern crate criterion;
 
-use aes_prng::AesRng;
 use ark_bls12_381::Bls12_381;
 use ark_std::UniformRand;
 use criterion::*;
@@ -154,7 +153,7 @@ fn bench_vfhint(c: &mut Criterion) {
 
                     (ublu, pk, hint_cur, tag_cur)
                 },
-                |(mut ublu, pk, hint_cur, tag_cur)| ublu.verify_hint(&pk, &hint_cur, &tag_cur),
+                |(ublu, pk, hint_cur, tag_cur)| ublu.verify_hint(&pk, &hint_cur, &tag_cur),
                 BatchSize::SmallInput,
             )
         });
@@ -182,10 +181,10 @@ fn bench_vfhist(c: &mut Criterion) {
                     let mut history: Vec<(Tag<CC>, Comm<CG1>)> = vec![];
 
                     let mut ublu: Ublu<Bls12_381, ThreadRng> = Ublu::setup(lambda, 4, rng.clone());
-                    let (pk, sk, hint0) = ublu.key_gen(T);
+                    let (pk, _sk, hint0) = ublu.key_gen(T);
                     hints.push(hint0);
 
-                    for i in 0..*d {
+                    for _ in 0..*d {
                         let r_got = CF::rand(&mut rng);
                         let prev_tag: &Option<Tag<CC>> =
                             &history.last().map(|(tag, _)| tag.clone());
@@ -203,7 +202,7 @@ fn bench_vfhist(c: &mut Criterion) {
 
                     (ublu, pk, history)
                 },
-                |(mut ublu, pk, history)| ublu.verify_history(&pk, history),
+                |(ublu, pk, history)| ublu.verify_history(&pk, history),
                 BatchSize::SmallInput,
             )
         });
@@ -253,7 +252,7 @@ fn bench_decrypt(c: &mut Criterion) {
                     let x: usize = 2;
                     let tag_pre = None;
                     let r_got = CF::rand(&mut rng);
-                    let (hint_cur, tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
+                    let (hint_cur, _tag_cur) = ublu.update(&pk, &hint_pre, &tag_pre, x, r_got);
 
                     let escrow = ublu.escrow(&pk, &hint_cur);
 

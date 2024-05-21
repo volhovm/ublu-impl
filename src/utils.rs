@@ -46,19 +46,19 @@ pub fn stirling_first_kind(n: usize, k: usize) -> u64 {
     arr[maxj]
 }
 
-fn stirling_first_kind_dp<P: Group>(n: usize, k: usize) -> P::ScalarField {
+pub fn stirling_first_kind_dp<G: Group>(n: usize, k: usize) -> G::ScalarField {
     // Create a 2D array to store the values of Stirling numbers
-    let mut dp = vec![vec![P::ScalarField::zero(); k + 1]; n + 1];
+    let mut dp = vec![vec![G::ScalarField::zero(); k + 1]; n + 1];
 
     // Initialize the base cases
     for i in 0..=n {
         dp[i][0] = if i == 0 {
-            P::ScalarField::one()
+            G::ScalarField::one()
         } else {
-            P::ScalarField::zero()
+            G::ScalarField::zero()
         };
         if i <= k {
-            dp[i][i] = P::ScalarField::one();
+            dp[i][i] = G::ScalarField::one();
         }
     }
 
@@ -66,7 +66,7 @@ fn stirling_first_kind_dp<P: Group>(n: usize, k: usize) -> P::ScalarField {
     for i in 1..=n {
         for j in 1..=k {
             dp[i][j] = dp[i - 1][j - 1]
-                + (P::ScalarField::from(i as u64) - P::ScalarField::one()) * dp[i - 1][j];
+                + (G::ScalarField::from(i as u64) - G::ScalarField::one()) * dp[i - 1][j];
         }
     }
 

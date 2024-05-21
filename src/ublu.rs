@@ -100,16 +100,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         }
         let ch20: CH20CRS<P> = CH20CRS::setup(&mut rng);
         let stirling: Vec<P::ScalarField> = (0..d + 1)
-            .map(|k| {
-                let value: i64 = crate::utils::stirling_first_kind_rec(d, k);
-                let sign = if value < 0 { -1 } else { 1 };
-                let sign_f = if value < 0 {
-                    -P::ScalarField::one()
-                } else {
-                    P::ScalarField::one()
-                };
-                P::ScalarField::from((value * sign) as u64) * sign_f
-            })
+            .map(|k| crate::utils::stirling_first_kind_dp::<P::G1>(d, k))
             .collect();
         Ublu {
             lambda,

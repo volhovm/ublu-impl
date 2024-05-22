@@ -21,23 +21,23 @@ use crate::{
 pub struct Ublu<P: Pairing, RNG: RngCore> {
     rng: RNG,
     lambda: usize,
-    d: usize,
+    pub d: usize,
     g: P::G1,
-    com_h: P::G1,
-    w: Vec<P::G1>,
+    pub com_h: P::G1,
+    pub w: Vec<P::G1>,
     elgamal: ElgamalParams<P::G1>,
     pub pedersen: PedersenParams<P::G1>,
-    ch20crs: CH20CRS<P>,
+    pub ch20crs: CH20CRS<P>,
     stirling: Vec<P::ScalarField>,
     escrow_lang: AlgLang<P::G1>,
     // consistency_lang: AlgLang<P::G1>,
     trace_lang: AlgLang<P::G1>,
-    pk_lang: AlgLang<P::G1>,
+    pub pk_lang: AlgLang<P::G1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PkProof<P: Pairing> {
-    proof: SigmaProof<P::G1>,
+    pub proof: SigmaProof<P::G1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,11 +52,11 @@ impl<P: Pairing> From<SigmaProof<P::G1>> for TagProof<P> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicKey<P: Pairing> {
-    h: P::G1,
-    com_t: Comm<P::G1>,
-    proof_pk: PkProof<P>,
+    pub h: P::G1,
+    pub com_t: Comm<P::G1>,
+    pub proof_pk: PkProof<P>,
     consistency_lang: AlgLang<P::G1>,
-    consistency_core_lang: AlgLang<P::G1>,
+    pub consistency_core_lang: AlgLang<P::G1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,9 +66,9 @@ pub struct SecretKey<P: Pairing> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Hint<P: Pairing> {
-    ciphers: Vec<Cipher<P::G1>>,
-    com_x: Comm<P::G1>,
-    proof_c: CH20Proof<P>,
+    pub ciphers: Vec<Cipher<P::G1>>,
+    pub com_x: Comm<P::G1>,
+    pub proof_c: CH20Proof<P>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

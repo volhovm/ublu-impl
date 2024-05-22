@@ -1,17 +1,22 @@
 //#[macro_use]
 extern crate criterion;
 
+use rayon::prelude::*;
+
 use ark_bls12_381::Bls12_381;
 use ark_ec::{CurveGroup, Group, VariableBaseMSM};
+use ark_ec::pairing::Pairing;
+use ark_ff::Zero;
 use ark_std::iterable::Iterable;
 use ark_std::UniformRand;
 use criterion::*;
 use rand::rngs::ThreadRng;
 use rand::thread_rng;
-use ublu_impl::ch20::{mul_mat_by_vec_g_f, AlgInst, AlgLang, AlgWit, LinearPoly};
+use ublu_impl::ch20::{mul_mat_by_vec_g_f, AlgInst, AlgLang, AlgWit, LinearPoly, CH20VerifierError};
 use ublu_impl::commitment::Comm;
 use ublu_impl::ublu::{Tag, Ublu};
 use ublu_impl::{CC, CF, CG1};
+use ublu_impl::elgamal::Cipher;
 
 mod perf;
 
@@ -75,7 +80,93 @@ fn bench_keyver(c: &mut Criterion) {
 
                     (ublu, pk, hint0)
                 },
-                |(ublu, pk, hint0)| ublu.verify_key_gen(&pk, &hint0),
+                |(ublu, pk, hint0)|
+                    {
+                        if hint0.com_x.value != CG1::zero() {
+                            println!("Issue1");
+                            return false;
+                        };
+                        {
+                            let inst = AlgInst::new(
+                                &ublu.pk_lang,
+                                vec![pk.h, hint0.ciphers[0].b, pk.com_t.value],
+                            );
+                            if pk.proof_pk.proof.verify(&inst).is_err() {
+                                println!("Issue2");
+                                return false;
+                            }
+                        };
+                        {
+                            let xcal = CG1::zero();
+
+                            let ab_s: Vec<CG1> = hint0
+                                .ciphers
+                                .clone()
+                                .into_iter()
+                                .flat_map(|Cipher { a, b }| vec![a, b])
+                                .collect();
+
+                            let inst_core = AlgInst::new(
+                                &pk.consistency_core_lang,
+                                vec![pk.com_t.value, xcal]
+                                    .into_iter()
+                                    .chain(ab_s)
+                                    .chain(vec![CG1::zero(); ublu.d])
+                                    .collect(),
+                            );
+
+                            let proofres = {
+                                let lang = pk.consistency_core_lang;
+                                let inst = inst_core;
+                                let mut lhs: Vec<Vec<CG1>> = vec![vec![]; lang.inst_size()];
+                                let mut rhs: Vec<Vec<<Bls12_381 as Pairing>::G2>> = vec![vec![]; lang.inst_size()];
+                                for i in 0..lang.inst_size() {
+                                    for j in 0..lang.wit_size() {
+                                        lhs[i].push(inst.matrix[i][j]);
+                                        rhs[i].push(hint0
+                                            .proof_c.d[j]);
+                                    }
+                                    lhs[i].push(inst.instance[i]);
+                                    rhs[i].push(-ublu.ch20crs.e);
+                                    lhs[i].push(hint0
+                                        .proof_c.a[i]);
+                                    rhs[i].push(-<Bls12_381 as Pairing>::G2::generator());
+                                }
+                                // TODO: for efficiency, recombine equations first with a random
+                                // element, this saves up quite some pairings
+                                let mut rng = thread_rng();
+                                let vercoeffs: Vec<CF> = lhs.iter().flatten().map(|_| CF::rand(&mut rng)).collect();
+                                let lhsc: CG1 = lhs.iter().flatten().zip(&vercoeffs).map(|(l, vc)| *l*vc).sum();
+                                let rhsc: <Bls12_381 as Pairing>::G2 = rhs.iter().flatten().zip(&vercoeffs).map(|(r, vc)| *r*vc).sum();
+                                //let pairing_res = <Bls12_381 as Pairing>::pairing(lhsc, rhsc);
+                                //if pairing_res != Zero::zero() {
+                                //    panic!("combined")
+                                //}
+                                for (l, r) in lhs.iter().zip(rhs.iter()) {
+                                    let vercoeffs: Vec<CF> = l.iter().map(|_| CF::rand(&mut rng)).collect();
+                                    let lc: CG1 = l.iter().zip(&vercoeffs).map(|(l, vc)| *l*vc).sum();
+                                    let rc: <Bls12_381 as Pairing>::G2 = r.iter().zip(&vercoeffs).map(|(r, vc)| *r*vc).sum();
+                                    let pres = <Bls12_381 as Pairing>::pairing(lc, rc);
+                                    if pres != Zero::zero() {
+                                        panic!("innercombined")
+                                    }
+                                    let pairing_res = <Bls12_381 as Pairing>::multi_pairing(l, r);
+                                    if pairing_res != Zero::zero() {
+                                        panic!()
+                                    }
+                                }
+                                false
+                            };
+                            if proofres
+                            {
+                                println!("Issue3");
+                                return false;
+                            }
+                        };
+
+                        true
+                    }
+                ,
                 BatchSize::SmallInput,
             )
         });
@@ -284,6 +375,17 @@ pub fn msm_mat_by_vec_g_f<G: Group + VariableBaseMSM + CurveGroup>(
     res
 }
 
+pub fn par_mat_by_vec_g_f<G: Group>(
+    mat: &[Vec<G>],
+    vec: &[G::ScalarField],
+) -> Vec<G> {
+    let res: Vec<G> = mat.par_iter().map(|row| {
+        let el: G = row.iter().zip(vec).map(|(m,v)| *m*v).sum();
+        el
+    }).collect();
+    res
+}
+
 fn bench_matrixmul(c: &mut Criterion) {
     let mut group = c.benchmark_group("Matrixmul");
     let d = 1;
@@ -360,19 +462,58 @@ fn bench_matrixmsm(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_matrixpar(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Matrixpar");
+    let d = 1;
+    group.bench_with_input(BenchmarkId::from_parameter(&d), &d, |b, _d| {
+        b.iter_batched(
+            || {
+                let mut rng = thread_rng();
+
+                let g: CG1 = UniformRand::rand(&mut rng);
+                let x: CF = UniformRand::rand(&mut rng);
+                let y: CF = UniformRand::rand(&mut rng);
+                let gx: CG1 = g * x;
+                let gy: CG1 = g * y;
+                let gz: CG1 = g * (x * y);
+
+                // g 0
+                // 0 g
+                // 0 x1
+                let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
+                    vec![LinearPoly::constant(4, g), LinearPoly::zero(4)],
+                    vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
+                    vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
+                ];
+
+                let lang: AlgLang<CG1> = AlgLang { matrix };
+                let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gy, gz]);
+                let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
+
+                (inst, wit)
+            },
+            |(inst, wit)| par_mat_by_vec_g_f(&inst.matrix, &wit.0),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
+
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
     targets = /*bench_vfhist,
     bench_setup,
-    bench_keygen,
+    bench_keygen,*/
     bench_keyver,
-    bench_update,
+    /*bench_update,
     bench_vfhint,
     bench_escrow,
     bench_escrow_ver,
     bench_decrypt,*/
-    bench_matrixmul,
-    bench_matrixmsm,
+    //bench_matrixmul,
+    //bench_matrixpar
 }
 criterion_main!(benches);

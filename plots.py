@@ -17,9 +17,22 @@ for m in sorted(glob("target/criterion/*/*/new/estimates.json")):
 
 #print(a)
 
+colors = {"Escrow": "red",
+          "KeyGen": "blue",
+          "Setup": "green",
+          "Update": "yellow",
+          "VfEscrow": "magenta",
+          "VfHint": "dashed",
+          "VfHistory": "dotted",
+          "VfKeyGen": "black",
+          "Decrypt": "black"}
+
 for fn in a:
     mark="+" #only marks,mark="+mark+",
-    print("\\addplot[error bars/.cd,y dir=both ,y explicit] coordinates {")
+    if fn not in colors:
+        #print("missing", fn)
+        continue
+    print("\\addplot[", colors[fn],",error bars/.cd,y dir=both ,y explicit] coordinates {")
     for deg in sorted(a[fn].keys()):
         el = a[fn][deg]
         print(f"({deg},{el[0]/1000000}) +- (0,{el[1]/1000000})")

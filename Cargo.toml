@@ -17,6 +17,7 @@ anyhow = "~1.0"
 ark-transcript = "0.0.1"
 stirling_numbers = "0.1.7"
 ark-serialize = { version = "0.4.2", features = ["derive"] }
+rayon = "1.10.0"
 
 [dev-dependencies]
 pprof = { version = "0.13.0", features = ["flamegraph"] }

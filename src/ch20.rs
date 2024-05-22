@@ -4,6 +4,8 @@ use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::{thread_rng, RngCore};
+use rayon::prelude::*;
+
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LinearPoly<G: Group> {
@@ -45,7 +47,7 @@ impl<G: Group> LinearPoly<G> {
 
 #[derive(Debug, Clone)]
 pub struct AlgInst<G: Group> {
-    pub(crate) instance: Vec<G>,
+    pub instance: Vec<G>,
     pub matrix: Vec<Vec<G>>, // Preprocessed matrix from instance
 }
 impl<G: Group> AlgInst<G> {
@@ -65,14 +67,16 @@ pub struct AlgLang<G: Group> {
 
 impl<G: Group> AlgLang<G> {
     pub fn instantiate_matrix(&self, inst: &[G]) -> Vec<Vec<G>> {
-        let mut res_mat: Vec<Vec<G>> = vec![];
+        /*let mut res_mat: Vec<Vec<G>> = vec![];
         for i in 0..self.inst_size() {
             let mut row: Vec<G> = vec![];
             for j in 0..self.wit_size() {
                 row.push((self.matrix[i][j]).eval_lpoly(inst));
             }
             res_mat.push(row);
-        }
+        }*/
+        let res_mat: Vec<Vec<G>> = self.matrix.par_iter().map(|row|row.iter().map(|elem| elem.eval_lpoly(inst)).collect()).collect();
+        //assert_eq!(res_mat, mat2);
         res_mat
     }
     pub fn wit_size(&self) -> usize {
@@ -104,7 +108,7 @@ impl<G: Group> AlgLang<G> {
 }
 
 pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> Vec<G> {
-    let n = mat.len();
+    /*let n = mat.len();
     let m = mat[0].len();
     let mut res: Vec<G> = vec![Zero::zero(); n];
 
@@ -112,9 +116,12 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
         for j in 0..m {
             res[i] += mat[i][j] * vec[j];
         }
-        //let row = G::msm(&mat[i].iter().map(), &vec).unwrap();
-        //assert_eq!(row, res[i]);
-    }
+    }*/
+    let res: Vec<G> = mat.par_iter().map(|row| {
+        let el: G = row.iter().zip(vec).map(|(m,v)| *m*v).sum();
+        el
+    }).collect();
+    //assert_eq!(res, res2);
     res
 }
 
@@ -128,12 +135,16 @@ pub fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> V
         m,
         vec.len()
     );
-    let mut res: Vec<G> = vec![Zero::zero(); n];
+    /*let mut res: Vec<G> = vec![Zero::zero(); n];
     for i in 0..n {
         for j in 0..m {
             res[i] += vec[j] * mat[i][j];
         }
-    }
+    }*/
+    let res: Vec<G> = mat.par_iter().map(|row| {
+        let el: G = row.iter().zip(vec).map(|(m,v)| *v*m).sum();
+        el
+    }).collect();
     res
 }
 
@@ -143,12 +154,16 @@ pub fn mul_mat_by_vec_f_f<G: Group>(
 ) -> Vec<G::ScalarField> {
     let n = mat.len();
     let m = mat[0].len();
-    let mut res: Vec<G::ScalarField> = vec![Zero::zero(); n];
+    /*let mut res: Vec<G::ScalarField> = vec![Zero::zero(); n];
     for i in 0..n {
         for j in 0..m {
             res[i] += vec[j] * mat[i][j];
         }
-    }
+    }*/
+    let res: Vec<G::ScalarField> = mat.par_iter().map(|row| {
+        let el: G::ScalarField = row.iter().zip(vec).map(|(m,v)| *m*v).sum();
+        el
+    }).collect();
     res
 }
 
@@ -425,6 +440,7 @@ impl<G: Group> CH20Trans<G> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use ark_bls12_381::Bls12_381;
     use super::*;
     use crate::{CC, CF, CG1};
     use ark_ec::CurveGroup;
@@ -560,5 +576,35 @@ pub(crate) mod tests {
         let mul = mul_mat_by_vec_g_f(&inst.matrix, &wit.0);
         let msm = msm_mat_by_vec_g_f(&inst.matrix, &wit.0);
         assert_eq!(mul, msm);
+    }
+
+    #[test]
+    fn test_batch_pairing() {
+        let mut rng = ark_std::test_rng();
+        let s = CF::rand(&mut rng);
+        let a = CG1::rand(&mut rng);
+        let b = <Bls12_381 as Pairing>::G2::rand(&mut rng);
+        let amul = a*s;
+        let bmul = b*s;
+
+        let pk = b*(s*s);
+        // We can compute the pairing of two points on the curve, either monolithically...
+        let e1 = Bls12_381::pairing(a, b);
+
+        let ea = Bls12_381::pairing(amul, b);
+        let eb = Bls12_381::pairing(a, bmul);
+
+        assert_eq!(ea, eb);
+
+        let ess1 = Bls12_381::pairing(amul, bmul);
+        let ess2 = Bls12_381::pairing(a, pk);
+
+        assert_eq!(ess1, ess2);
+
+        let mpk = b*(-s*s);
+
+        let res = Bls12_381::multi_pairing(vec![amul, a], vec![bmul, mpk]);
+
+        assert_eq!(res, Zero::zero());
     }
 }

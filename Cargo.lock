@@ -1229,6 +1229,7 @@ dependencies = [
  "criterion",
  "pprof",
  "rand",
+ "rayon",
  "stirling_numbers",
 ]
 

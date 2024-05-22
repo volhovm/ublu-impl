@@ -46,7 +46,7 @@ impl<G: Group> LinearPoly<G> {
 #[derive(Debug, Clone)]
 pub struct AlgInst<G: Group> {
     pub(crate) instance: Vec<G>,
-    pub(crate) matrix: Vec<Vec<G>>, // Preprocessed matrix from instance
+    pub matrix: Vec<Vec<G>>, // Preprocessed matrix from instance
 }
 impl<G: Group> AlgInst<G> {
     pub fn new(language: &AlgLang<G>, instance: Vec<G>) -> Self {
@@ -107,10 +107,13 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
     let n = mat.len();
     let m = mat[0].len();
     let mut res: Vec<G> = vec![Zero::zero(); n];
+
     for i in 0..n {
         for j in 0..m {
             res[i] += mat[i][j] * vec[j];
         }
+        //let row = G::msm(&mat[i].iter().map(), &vec).unwrap();
+        //assert_eq!(row, res[i]);
     }
     res
 }
@@ -424,6 +427,7 @@ impl<G: Group> CH20Trans<G> {
 pub(crate) mod tests {
     use super::*;
     use crate::{CC, CF, CG1};
+    use ark_ec::CurveGroup;
 
     #[test]
     fn test_ch20_correctness() {
@@ -497,5 +501,64 @@ pub(crate) mod tests {
         let proof2 = proof.update(&mut rng, &crs, &lang, &inst, &trans);
         let res2 = proof2.verify(&crs, &lang, &inst2);
         println!("Transformed proof valid?: {:?}", res2);
+    }
+
+    #[test]
+    fn test_matmul() {
+        pub fn mul_mat_by_vec_g_f<G: Group + CurveGroup>(
+            mat: &[Vec<G>],
+            vec: &[G::ScalarField],
+        ) -> Vec<G> {
+            let n = mat.len();
+            let m = mat[0].len();
+            let mut res: Vec<G> = vec![Zero::zero(); n];
+
+            for i in 0..n {
+                for j in 0..m {
+                    res[i] += mat[i][j] * vec[j];
+                }
+            }
+            res
+        }
+
+        pub fn msm_mat_by_vec_g_f<G: Group + CurveGroup>(
+            mat: &[Vec<G>],
+            vec: &[G::ScalarField],
+        ) -> Vec<G> {
+            let res = mat
+                .iter()
+                .map(|row| {
+                    let row_aff: Vec<G::Affine> = row.iter().map(|p| p.into_affine()).collect();
+                    let el = G::msm(&row_aff, &vec).unwrap();
+                    el
+                })
+                .collect();
+            res
+        }
+        let mut rng = thread_rng();
+
+        let g: CG1 = UniformRand::rand(&mut rng);
+        let x: CF = UniformRand::rand(&mut rng);
+        let y: CF = UniformRand::rand(&mut rng);
+        let gx: CG1 = g * x;
+        let gy: CG1 = g * y;
+        let gz: CG1 = g * (x * y);
+
+        // g 0
+        // 0 g
+        // 0 x1
+        let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
+            vec![LinearPoly::constant(4, g), LinearPoly::zero(4)],
+            vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
+            vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
+        ];
+
+        let lang: AlgLang<CG1> = AlgLang { matrix };
+        let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gy, gz]);
+        let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
+
+        let mul = mul_mat_by_vec_g_f(&inst.matrix, &wit.0);
+        let msm = msm_mat_by_vec_g_f(&inst.matrix, &wit.0);
+        assert_eq!(mul, msm);
     }
 }

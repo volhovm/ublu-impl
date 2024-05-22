@@ -2,17 +2,20 @@
 extern crate criterion;
 
 use ark_bls12_381::Bls12_381;
+use ark_ec::{CurveGroup, Group, VariableBaseMSM};
+use ark_std::iterable::Iterable;
 use ark_std::UniformRand;
 use criterion::*;
 use rand::rngs::ThreadRng;
 use rand::thread_rng;
+use ublu_impl::ch20::{mul_mat_by_vec_g_f, AlgInst, AlgLang, AlgWit, LinearPoly};
 use ublu_impl::commitment::Comm;
 use ublu_impl::ublu::{Tag, Ublu};
 use ublu_impl::{CC, CF, CG1};
 
 mod perf;
 
-static D_VALUES: [usize; 6] = [2, 4, 8, 16, 32, 64];
+static D_VALUES: [usize; 1] = [32]; // [2, 4, 8, 16, 32, 64];
 static T: u32 = 4;
 
 fn bench_setup(c: &mut Criterion) {
@@ -266,10 +269,101 @@ fn bench_decrypt(c: &mut Criterion) {
     group.finish();
 }
 
+pub fn msm_mat_by_vec_g_f<G: Group + VariableBaseMSM + CurveGroup>(
+    mat: &[Vec<G>],
+    vec: &[G::ScalarField],
+) -> Vec<G> {
+    let res = mat
+        .iter()
+        .map(|row| {
+            let row_aff: Vec<G::Affine> = row.iter().map(|p| p.into_affine()).collect();
+            let el = G::msm(&row_aff, &vec).unwrap();
+            el
+        })
+        .collect();
+    res
+}
+
+fn bench_matrixmul(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Matrixmul");
+    let d = 1;
+    group.bench_with_input(BenchmarkId::from_parameter(&d), &d, |b, _d| {
+        b.iter_batched(
+            || {
+                let mut rng = thread_rng();
+
+                let g: CG1 = UniformRand::rand(&mut rng);
+                let x: CF = UniformRand::rand(&mut rng);
+                let y: CF = UniformRand::rand(&mut rng);
+                let gx: CG1 = g * x;
+                let gy: CG1 = g * y;
+                let gz: CG1 = g * (x * y);
+
+                // g 0
+                // 0 g
+                // 0 x1
+                let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
+                    vec![LinearPoly::constant(4, g), LinearPoly::zero(4)],
+                    vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
+                    vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
+                ];
+
+                let lang: AlgLang<CG1> = AlgLang { matrix };
+                let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gy, gz]);
+                let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
+
+                (inst, wit)
+            },
+            |(inst, wit)| mul_mat_by_vec_g_f(&inst.matrix, &wit.0),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
+fn bench_matrixmsm(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Matrixmsm");
+    let d = 1;
+    group.bench_with_input(BenchmarkId::from_parameter(&d), &d, |b, _d| {
+        b.iter_batched(
+            || {
+                let mut rng = thread_rng();
+
+                let g: CG1 = UniformRand::rand(&mut rng);
+                let x: CF = UniformRand::rand(&mut rng);
+                let y: CF = UniformRand::rand(&mut rng);
+                let gx: CG1 = g * x;
+                let gy: CG1 = g * y;
+                let gz: CG1 = g * (x * y);
+
+                // g 0
+                // 0 g
+                // 0 x1
+                let matrix: Vec<Vec<LinearPoly<CG1>>> = vec![
+                    vec![LinearPoly::constant(4, g), LinearPoly::zero(4)],
+                    vec![LinearPoly::zero(4), LinearPoly::constant(4, g)],
+                    vec![LinearPoly::zero(4), LinearPoly::single(4, 0)],
+                ];
+
+                let lang: AlgLang<CG1> = AlgLang { matrix };
+                let inst: AlgInst<CG1> = AlgInst::new(&lang, vec![gx, gy, gz]);
+                let wit: AlgWit<CG1> = AlgWit(vec![x, y]);
+
+                (inst, wit)
+            },
+            |(inst, wit)| msm_mat_by_vec_g_f(&inst.matrix, &wit.0),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
-    targets = bench_vfhist,
+    targets = /*bench_vfhist,
     bench_setup,
     bench_keygen,
     bench_keyver,
@@ -277,6 +371,8 @@ criterion_group! {
     bench_vfhint,
     bench_escrow,
     bench_escrow_ver,
-    bench_decrypt,
+    bench_decrypt,*/
+    bench_matrixmul,
+    bench_matrixmsm,
 }
 criterion_main!(benches);

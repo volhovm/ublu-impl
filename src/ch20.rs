@@ -584,10 +584,10 @@ pub(crate) mod tests {
         let s = CF::rand(&mut rng);
         let a = CG1::rand(&mut rng);
         let b = <Bls12_381 as Pairing>::G2::rand(&mut rng);
-        let amul = a*s;
-        let bmul = b*s;
+        let amul = a * s;
+        let bmul = b * s;
 
-        let pk = b*(s*s);
+        let pk = b * (s * s);
         // We can compute the pairing of two points on the curve, either monolithically...
         let e1 = Bls12_381::pairing(a, b);
 
@@ -601,10 +601,79 @@ pub(crate) mod tests {
 
         assert_eq!(ess1, ess2);
 
-        let mpk = b*(-s*s);
+        let mpk = b * (-s * s);
 
         let res = Bls12_381::multi_pairing(vec![amul, a], vec![bmul, mpk]);
 
         assert_eq!(res, Zero::zero());
+
+        let seprand = CF::rand(&mut rng);
+
+        let sp = CF::rand(&mut rng);
+        let ap = CG1::rand(&mut rng);
+        let bp = <Bls12_381 as Pairing>::G2::rand(&mut rng);
+        let amulp = ap * s;
+        let bmulp = bp * s;
+
+        let mpkp = bp * (-s * s);
+
+        let res = Bls12_381::multi_pairing(vec![amulp * seprand + amul, ap * seprand + a], vec![bmulp * seprand + bmul, mpkp * (seprand * seprand) + mpk]);
+
+        assert_eq!(res, Zero::zero());
+
+        // test batching
+
+        let c = CG1::rand(&mut rng);
+        let d = <Bls12_381 as Pairing>::G2::rand(&mut rng);
+
+        let prod = Bls12_381::multi_pairing(vec![a, c], vec![b, d]);
+    }
+
+    #[test]
+    fn test_next_pairing() {
+        let mut rng = ark_std::test_rng();
+
+        let s = CF::rand(&mut rng);
+
+        let m00 = CG1::rand(&mut rng);
+        let m01 = CG1::rand(&mut rng);
+        let v0 = <Bls12_381 as Pairing>::G2::rand(&mut rng);
+        let v1 = <Bls12_381 as Pairing>::G2::rand(&mut rng);
+
+        let e_one = Bls12_381::pairing(m00, v0);
+        let e_two = Bls12_381::pairing(m01, v1);
+        let e_comb = Bls12_381::multi_pairing(vec![m00, m01], vec![v0, v1]);
+
+        assert_eq!(e_one + e_two, e_comb);
+
+        let e_scale_1 = Bls12_381::pairing(m00 * s, v0);
+        let e_scale_2 = Bls12_381::pairing(m00, v0 * s);
+        let e_scale_t = e_one * s;
+
+        assert_eq!(e_scale_1, e_scale_t);
+        assert_eq!(e_scale_2, e_scale_t);
+
+        let e_scale_12 = Bls12_381::pairing(m00 * s, v0 * s);
+        let e_scale_tt = e_one * (s * s);
+
+        assert_eq!(e_scale_12, e_scale_tt);
+    }
+
+    #[test]
+    fn test_compress_pairing() {
+        let mut rng = ark_std::test_rng();
+
+        let s = CF::rand(&mut rng);
+
+        let m00 = CG1::rand(&mut rng);
+        let m10 = CG1::rand(&mut rng);
+        let v0 = <Bls12_381 as Pairing>::G2::rand(&mut rng);
+
+        let e_one = Bls12_381::pairing(m00, v0);
+        let e_two = Bls12_381::pairing(m10, v0);
+
+        let e_comb = Bls12_381::pairing(m00 + m10*s, v0);
+
+        assert_eq!(e_one + e_two*s, e_comb)
     }
 }

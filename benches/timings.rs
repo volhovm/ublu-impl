@@ -118,23 +118,47 @@ fn bench_keyver(c: &mut Criterion) {
                             let proofres = {
                                 let lang = pk.consistency_core_lang;
                                 let inst = inst_core;
-                                let mut lhs: Vec<Vec<CG1>> = vec![vec![]; lang.inst_size()];
-                                let mut rhs: Vec<Vec<<Bls12_381 as Pairing>::G2>> = vec![vec![]; lang.inst_size()];
+                                let mut rng = thread_rng();
+                                let mut lhs: Vec<CG1> = vec![CG1::zero(); lang.wit_size()+2];
+                                let mut rhs: Vec<<Bls12_381 as Pairing>::G2> = hint0.proof_c.d.clone();
+                                rhs.push(-ublu.ch20crs.e);
+                                rhs.push(-<Bls12_381 as Pairing>::G2::generator());
+
                                 for i in 0..lang.inst_size() {
+                                    let alpha = CF::rand(&mut rng);
                                     for j in 0..lang.wit_size() {
-                                        lhs[i].push(inst.matrix[i][j]);
-                                        rhs[i].push(hint0
-                                            .proof_c.d[j]);
+                                        lhs[j] += inst.matrix[i][j]*alpha;
                                     }
-                                    lhs[i].push(inst.instance[i]);
-                                    rhs[i].push(-ublu.ch20crs.e);
-                                    lhs[i].push(hint0
-                                        .proof_c.a[i]);
-                                    rhs[i].push(-<Bls12_381 as Pairing>::G2::generator());
+                                    lhs[lang.wit_size()] += inst.instance[i]*alpha;
+                                    lhs[lang.wit_size()+1] += hint0
+                                        .proof_c.a[i]*alpha;
+                                }
+                                let pairing_res = <Bls12_381 as Pairing>::multi_pairing(lhs, rhs);
+                                if pairing_res != Zero::zero() {
+                                    panic!("combined")
                                 }
                                 // TODO: for efficiency, recombine equations first with a random
                                 // element, this saves up quite some pairings
-                                let mut rng = thread_rng();
+                                /*for (l, r) in lhs.iter().zip(rhs.iter()) {
+                                    let pairing_res = <Bls12_381 as Pairing>::multi_pairing(l, r);
+                                    if pairing_res != Zero::zero() {
+                                        panic!();
+                                    }
+                                    break;
+                                }*/
+                                /*let mut rng = thread_rng();
+                                let mut lhsc = lhs[0].clone();
+                                for i in 1..lang.inst_size() {
+                                    let alpha = CF::rand(&mut rng);
+                                    for j in 0..lhs[i].len() {
+                                        lhsc[j] += lhs[i][j]*alpha
+                                    }
+                                }
+                                let pairing_res = <Bls12_381 as Pairing>::multi_pairing(lhsc, &rhs[0]);
+                                if pairing_res != Zero::zero() {
+                                    panic!("combined")
+                                }*/
+                                /*let mut rng = thread_rng();
                                 let vercoeffs: Vec<CF> = lhs.iter().flatten().map(|_| CF::rand(&mut rng)).collect();
                                 let lhsc: CG1 = lhs.iter().flatten().zip(&vercoeffs).map(|(l, vc)| *l*vc).sum();
                                 let rhsc: <Bls12_381 as Pairing>::G2 = rhs.iter().flatten().zip(&vercoeffs).map(|(r, vc)| *r*vc).sum();
@@ -154,7 +178,13 @@ fn bench_keyver(c: &mut Criterion) {
                                     if pairing_res != Zero::zero() {
                                         panic!()
                                     }
-                                }
+                                }*/
+                                /*let lhs_flatten: Vec<CG1> = lhs.into_iter().flatten().collect();
+                                let rhs_flatten: Vec<<Bls12_381 as Pairing>::G2> = rhs.into_iter().flatten().collect();
+                                let pairing_res = <Bls12_381 as Pairing>::multi_pairing(lhs_flatten, rhs_flatten);
+                                if pairing_res != Zero::zero() {
+                                    panic!()
+                                }*/
                                 false
                             };
                             if proofres

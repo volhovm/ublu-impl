@@ -6,7 +6,6 @@ use ark_std::UniformRand;
 use rand::{thread_rng, RngCore};
 use rayon::prelude::*;
 
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LinearPoly<G: Group> {
     pub poly_coeffs: Vec<G::ScalarField>,
@@ -75,7 +74,11 @@ impl<G: Group> AlgLang<G> {
             }
             res_mat.push(row);
         }*/
-        let res_mat: Vec<Vec<G>> = self.matrix.par_iter().map(|row|row.iter().map(|elem| elem.eval_lpoly(inst)).collect()).collect();
+        let res_mat: Vec<Vec<G>> = self
+            .matrix
+            .par_iter()
+            .map(|row| row.iter().map(|elem| elem.eval_lpoly(inst)).collect())
+            .collect();
         //assert_eq!(res_mat, mat2);
         res_mat
     }
@@ -117,10 +120,13 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
             res[i] += mat[i][j] * vec[j];
         }
     }*/
-    let res: Vec<G> = mat.par_iter().map(|row| {
-        let el: G = row.iter().zip(vec).map(|(m,v)| *m*v).sum();
-        el
-    }).collect();
+    let res: Vec<G> = mat
+        .par_iter()
+        .map(|row| {
+            let el: G = row.iter().zip(vec).map(|(m, v)| *m * v).sum();
+            el
+        })
+        .collect();
     //assert_eq!(res, res2);
     res
 }
@@ -141,10 +147,13 @@ pub fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> V
             res[i] += vec[j] * mat[i][j];
         }
     }*/
-    let res: Vec<G> = mat.par_iter().map(|row| {
-        let el: G = row.iter().zip(vec).map(|(m,v)| *v*m).sum();
-        el
-    }).collect();
+    let res: Vec<G> = mat
+        .par_iter()
+        .map(|row| {
+            let el: G = row.iter().zip(vec).map(|(m, v)| *v * m).sum();
+            el
+        })
+        .collect();
     res
 }
 
@@ -152,18 +161,21 @@ pub fn mul_mat_by_vec_f_f<G: Group>(
     mat: &[Vec<G::ScalarField>],
     vec: &[G::ScalarField],
 ) -> Vec<G::ScalarField> {
-    let n = mat.len();
+    /*let n = mat.len();
     let m = mat[0].len();
-    /*let mut res: Vec<G::ScalarField> = vec![Zero::zero(); n];
+    let mut res: Vec<G::ScalarField> = vec![Zero::zero(); n];
     for i in 0..n {
         for j in 0..m {
             res[i] += vec[j] * mat[i][j];
         }
     }*/
-    let res: Vec<G::ScalarField> = mat.par_iter().map(|row| {
-        let el: G::ScalarField = row.iter().zip(vec).map(|(m,v)| *m*v).sum();
-        el
-    }).collect();
+    let res: Vec<G::ScalarField> = mat
+        .par_iter()
+        .map(|row| {
+            let el: G::ScalarField = row.iter().zip(vec).map(|(m, v)| *m * v).sum();
+            el
+        })
+        .collect();
     res
 }
 
@@ -223,27 +235,24 @@ impl<P: Pairing> CH20Proof<P> {
         lang: &AlgLang<P::G1>,
         inst: &AlgInst<P::G1>,
     ) -> Result<(), CH20VerifierError> {
-        let mut lhs: Vec<Vec<P::G1>> = vec![vec![]; lang.inst_size()];
-        let mut rhs: Vec<Vec<P::G2>> = vec![vec![]; lang.inst_size()];
+        let mut rng = thread_rng();
+        let mut lhs: Vec<P::G1> = vec![P::G1::zero(); lang.wit_size() + 2];
+        let mut rhs: Vec<P::G2> = self.d.clone();
+        rhs.push(-crs.e);
+        rhs.push(-P::G2::generator());
         for i in 0..lang.inst_size() {
+            let alpha = P::ScalarField::rand(&mut rng);
             for j in 0..lang.wit_size() {
-                lhs[i].push(inst.matrix[i][j]);
-                rhs[i].push(self.d[j]);
+                lhs[j] += inst.matrix[i][j] * alpha;
             }
-            lhs[i].push(inst.instance[i]);
-            rhs[i].push(-crs.e);
-            lhs[i].push(self.a[i]);
-            rhs[i].push(-P::G2::generator());
+            lhs[lang.wit_size()] += inst.instance[i] * alpha;
+            lhs[lang.wit_size() + 1] += self.a[i] * alpha;
         }
-        // TODO: for efficiency, recombine equations first with a random
-        // element, this saves up quite some pairings
-        for (l, r) in lhs.iter().zip(rhs.iter()) {
-            let pairing_res = P::multi_pairing(l, r);
-            if pairing_res != Zero::zero() {
-                return Err(CH20VerifierError::CH20GenericError(From::from(
-                    "Pairing is nonzero",
-                )));
-            }
+        let pairing_res = P::multi_pairing(lhs, rhs);
+        if pairing_res != Zero::zero() {
+            return Err(CH20VerifierError::CH20GenericError(From::from(
+                "Pairing is nonzero",
+            )));
         }
         Ok(())
     }
@@ -440,9 +449,9 @@ impl<G: Group> CH20Trans<G> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use ark_bls12_381::Bls12_381;
     use super::*;
     use crate::{CC, CF, CG1};
+    use ark_bls12_381::Bls12_381;
     use ark_ec::CurveGroup;
 
     #[test]
@@ -617,7 +626,10 @@ pub(crate) mod tests {
 
         let mpkp = bp * (-s * s);
 
-        let res = Bls12_381::multi_pairing(vec![amulp * seprand + amul, ap * seprand + a], vec![bmulp * seprand + bmul, mpkp * (seprand * seprand) + mpk]);
+        let res = Bls12_381::multi_pairing(
+            vec![amulp * seprand + amul, ap * seprand + a],
+            vec![bmulp * seprand + bmul, mpkp * (seprand * seprand) + mpk],
+        );
 
         assert_eq!(res, Zero::zero());
 
@@ -672,8 +684,8 @@ pub(crate) mod tests {
         let e_one = Bls12_381::pairing(m00, v0);
         let e_two = Bls12_381::pairing(m10, v0);
 
-        let e_comb = Bls12_381::pairing(m00 + m10*s, v0);
+        let e_comb = Bls12_381::pairing(m00 + m10 * s, v0);
 
-        assert_eq!(e_one + e_two*s, e_comb)
+        assert_eq!(e_one + e_two * s, e_comb)
     }
 }

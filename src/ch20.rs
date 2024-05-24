@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LinearPoly<G: Group> {
-    pub poly_coeffs: Vec<G::ScalarField>,
+    pub poly_coeffs: Vec<bool>,
     pub poly_const: G,
 }
 
@@ -18,13 +18,12 @@ impl<G: Group> LinearPoly<G> {
             + vars
                 .iter()
                 .zip(self.poly_coeffs.iter())
-                .map(|(var, coeff)| *var * coeff)
-                .sum::<G>()
+                .filter_map(|(val, flag)| flag.then(|| val)).sum::<G>()
     }
 
     pub fn constant(size: usize, elem: G) -> Self {
         LinearPoly {
-            poly_coeffs: vec![G::ScalarField::zero(); size],
+            poly_coeffs: vec![false; size],
             poly_const: elem,
         }
     }
@@ -34,9 +33,9 @@ impl<G: Group> LinearPoly<G> {
     }
 
     pub fn single(size: usize, ix: usize) -> Self {
-        let mut poly_coeffs: Vec<_> = vec![G::ScalarField::zero(); size];
+        let mut poly_coeffs: Vec<_> = vec![false; size];
         let poly_const = G::zero();
-        poly_coeffs[ix] = G::ScalarField::from(1u64);
+        poly_coeffs[ix] = true;
         LinearPoly {
             poly_coeffs,
             poly_const,

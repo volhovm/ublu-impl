@@ -22,7 +22,7 @@ use ublu_impl::{CC, CF, CG1};
 
 mod perf;
 
-static D_VALUES: [usize; 1] = [32]; // [2, 4, 8, 16, 32, 64];
+static D_VALUES: [usize; 1] = [128]; // [2, 4, 8, 16, 32, 64];
 static T: u32 = 4;
 
 fn bench_setup(c: &mut Criterion) {
@@ -83,117 +83,7 @@ fn bench_keyver(c: &mut Criterion) {
                     (ublu, pk, hint0)
                 },
                 |(ublu, pk, hint0)| {
-                    if hint0.com_x.value != CG1::zero() {
-                        println!("Issue1");
-                        return false;
-                    };
-                    {
-                        let inst = AlgInst::new(
-                            &ublu.pk_lang,
-                            vec![pk.h, hint0.ciphers[0].b, pk.com_t.value],
-                        );
-                        if pk.proof_pk.proof.verify(&inst).is_err() {
-                            println!("Issue2");
-                            return false;
-                        }
-                    };
-                    {
-                        let xcal = CG1::zero();
-
-                        let ab_s: Vec<CG1> = hint0
-                            .ciphers
-                            .clone()
-                            .into_iter()
-                            .flat_map(|Cipher { a, b }| vec![a, b])
-                            .collect();
-
-                        let inst_core = AlgInst::new(
-                            &pk.consistency_core_lang,
-                            vec![pk.com_t.value, xcal]
-                                .into_iter()
-                                .chain(ab_s)
-                                .chain(vec![CG1::zero(); ublu.d])
-                                .collect(),
-                        );
-
-                        let proofres = {
-                            let lang = pk.consistency_core_lang;
-                            let inst = inst_core;
-                            let mut rng = thread_rng();
-                            let mut lhs: Vec<CG1> = vec![CG1::zero(); lang.wit_size() + 2];
-                            let mut rhs: Vec<<Bls12_381 as Pairing>::G2> = hint0.proof_c.d.clone();
-                            rhs.push(-ublu.ch20crs.e);
-                            rhs.push(-<Bls12_381 as Pairing>::G2::generator());
-
-                            for i in 0..lang.inst_size() {
-                                let alpha = CF::rand(&mut rng);
-                                for j in 0..lang.wit_size() {
-                                    lhs[j] += inst.matrix[i][j] * alpha;
-                                }
-                                lhs[lang.wit_size()] += inst.instance[i] * alpha;
-                                lhs[lang.wit_size() + 1] += hint0.proof_c.a[i] * alpha;
-                            }
-                            let pairing_res = <Bls12_381 as Pairing>::multi_pairing(lhs, rhs);
-                            if pairing_res != Zero::zero() {
-                                panic!("combined")
-                            }
-                            // TODO: for efficiency, recombine equations first with a random
-                            // element, this saves up quite some pairings
-                            /*for (l, r) in lhs.iter().zip(rhs.iter()) {
-                                let pairing_res = <Bls12_381 as Pairing>::multi_pairing(l, r);
-                                if pairing_res != Zero::zero() {
-                                    panic!();
-                                }
-                                break;
-                            }*/
-                            /*let mut rng = thread_rng();
-                            let mut lhsc = lhs[0].clone();
-                            for i in 1..lang.inst_size() {
-                                let alpha = CF::rand(&mut rng);
-                                for j in 0..lhs[i].len() {
-                                    lhsc[j] += lhs[i][j]*alpha
-                                }
-                            }
-                            let pairing_res = <Bls12_381 as Pairing>::multi_pairing(lhsc, &rhs[0]);
-                            if pairing_res != Zero::zero() {
-                                panic!("combined")
-                            }*/
-                            /*let mut rng = thread_rng();
-                            let vercoeffs: Vec<CF> = lhs.iter().flatten().map(|_| CF::rand(&mut rng)).collect();
-                            let lhsc: CG1 = lhs.iter().flatten().zip(&vercoeffs).map(|(l, vc)| *l*vc).sum();
-                            let rhsc: <Bls12_381 as Pairing>::G2 = rhs.iter().flatten().zip(&vercoeffs).map(|(r, vc)| *r*vc).sum();
-                            //let pairing_res = <Bls12_381 as Pairing>::pairing(lhsc, rhsc);
-                            //if pairing_res != Zero::zero() {
-                            //    panic!("combined")
-                            //}
-                            for (l, r) in lhs.iter().zip(rhs.iter()) {
-                                let vercoeffs: Vec<CF> = l.iter().map(|_| CF::rand(&mut rng)).collect();
-                                let lc: CG1 = l.iter().zip(&vercoeffs).map(|(l, vc)| *l*vc).sum();
-                                let rc: <Bls12_381 as Pairing>::G2 = r.iter().zip(&vercoeffs).map(|(r, vc)| *r*vc).sum();
-                                let pres = <Bls12_381 as Pairing>::pairing(lc, rc);
-                                if pres != Zero::zero() {
-                                    panic!("innercombined")
-                                }
-                                let pairing_res = <Bls12_381 as Pairing>::multi_pairing(l, r);
-                                if pairing_res != Zero::zero() {
-                                    panic!()
-                                }
-                            }*/
-                            /*let lhs_flatten: Vec<CG1> = lhs.into_iter().flatten().collect();
-                            let rhs_flatten: Vec<<Bls12_381 as Pairing>::G2> = rhs.into_iter().flatten().collect();
-                            let pairing_res = <Bls12_381 as Pairing>::multi_pairing(lhs_flatten, rhs_flatten);
-                            if pairing_res != Zero::zero() {
-                                panic!()
-                            }*/
-                            false
-                        };
-                        if proofres {
-                            println!("Issue3");
-                            return false;
-                        }
-                    };
-
-                    true
+                    ublu.verify_key_gen(&pk, &hint0);
                 },
                 BatchSize::SmallInput,
             )
@@ -531,15 +421,15 @@ fn bench_matrixpar(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
-    targets = /*bench_vfhist,
+    targets = bench_vfhist,
     bench_setup,
-    bench_keygen,*/
+    bench_keygen,
     bench_keyver,
-    /*bench_update,
+    bench_update,
     bench_vfhint,
     bench_escrow,
     bench_escrow_ver,
-    bench_decrypt,*/
+    bench_decrypt,
     //bench_matrixmul,
     //bench_matrixpar
 }

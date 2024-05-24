@@ -27,7 +27,7 @@ colors = {"Escrow": "red",
           "VfKeyGen": "black",
           "Decrypt": "black"}
 
-for fn in a:
+for fn in sorted(a.keys(), key=lambda x: a[x][128][0], reverse=True):
     mark="+" #only marks,mark="+mark+",
     if fn not in colors:
         #print("missing", fn)

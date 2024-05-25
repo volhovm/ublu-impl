@@ -215,6 +215,7 @@ pub fn consistency_trans<G: Group>(
     g: G,
     hs: &[G],
     d: usize,
+    binomials: &Vec<Vec<G::ScalarField>>,
     u_x: G::ScalarField,
     u_rx: G::ScalarField,
     u_rs: Vec<G::ScalarField>,
@@ -264,7 +265,7 @@ pub fn consistency_trans<G: Group>(
     t_wa[8] = u_x * u_ralpha; // + U_x*U_α
 
     let v_coeff = |i: usize, j: usize, x: G::ScalarField| {
-        field_pow(x, i - j) * binomial::<G::ScalarField>(i, j)
+        field_pow(x, i - j) * binomials[i][j]
     };
 
     // r_i' = ∑ v_coeff(i,j,U_x) r_i + U_{r_i}
@@ -302,7 +303,7 @@ pub fn consistency_trans<G: Group>(
         }
         for j in 0..i {
             t_am[4 + 2 * i][n + 4 + 2 * j] =
-                field_pow(u_x, i - j) * binomial::<G::ScalarField>(i, j + 1)
+                field_pow(u_x, i - j) * binomials[i][j + 1]
         }
         t_aa[3 + 2 * i] = g * u_rs[i];
         t_aa[4 + 2 * i] = g * (field_pow(u_x, i + 1)) + hs[1] * u_rs[i] + hs[2 + i] * u_alpha;
@@ -342,6 +343,7 @@ pub fn consistency_trans_rand<G: Group, RNG: RngCore>(
     g: G,
     hs: &[G],
     d: usize,
+    binomials: &Vec<Vec<G::ScalarField>>,
     rng: &mut RNG,
 ) -> CH20Trans<G> {
     let u_x: G::ScalarField = UniformRand::rand(rng);
@@ -349,13 +351,14 @@ pub fn consistency_trans_rand<G: Group, RNG: RngCore>(
     let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
     let u_alpha: G::ScalarField = From::from(0u64);
     let u_ralpha: G::ScalarField = From::from(0u64);
-    consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha)
+    consistency_trans(g, hs, d, binomials, u_x, u_rx, u_rs, u_alpha, u_ralpha)
 }
 
 pub fn consistency_core_trans<G: Group>(
     g: G,
     hs: &[G],
     d: usize,
+    binomials: &Vec<Vec<G::ScalarField>>,
     u_x: G::ScalarField,
     u_rx: G::ScalarField,
     u_rs: Vec<G::ScalarField>,
@@ -365,7 +368,7 @@ pub fn consistency_core_trans<G: Group>(
 
     let u_alpha: G::ScalarField = From::from(0u64);
     let u_ralpha: G::ScalarField = From::from(0u64);
-    let mut t = consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha);
+    let mut t = consistency_trans(g, hs, d, binomials, u_x, u_rx, u_rs, u_alpha, u_ralpha);
 
     for i in 0..m {
         t.t_wm[i].remove(8);
@@ -414,37 +417,40 @@ pub fn consistency_core_trans_rand<G: Group, RNG: RngCore>(
     g: G,
     hs: &[G],
     d: usize,
+    binomials: &Vec<Vec<G::ScalarField>>,
     rng: &mut RNG,
 ) -> CH20Trans<G> {
     let u_x: G::ScalarField = UniformRand::rand(rng);
     let u_rx: G::ScalarField = UniformRand::rand(rng);
     let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
-    consistency_core_trans(g, hs, d, u_x, u_rx, u_rs)
+    consistency_core_trans(g, hs, d, binomials, u_x, u_rx, u_rs)
 }
 
 pub fn consistency_blind_trans<G: Group>(
     g: G,
     hs: &[G],
     d: usize,
+    binomials: &Vec<Vec<G::ScalarField>>,
     u_rs: Vec<G::ScalarField>,
     u_alpha: G::ScalarField,
     u_ralpha: G::ScalarField,
 ) -> CH20Trans<G> {
     let u_x: G::ScalarField = Zero::zero();
     let u_rx: G::ScalarField = Zero::zero();
-    consistency_trans(g, hs, d, u_x, u_rx, u_rs, u_alpha, u_ralpha)
+    consistency_trans(g, hs, d, binomials, u_x, u_rx, u_rs, u_alpha, u_ralpha)
 }
 
 pub fn consistency_blind_trans_rand<G: Group, RNG: RngCore>(
     g: G,
     hs: &[G],
     d: usize,
+    binomials: &Vec<Vec<G::ScalarField>>,
     rng: &mut RNG,
 ) -> CH20Trans<G> {
     let u_rs: Vec<G::ScalarField> = (0..d).map(|_i| UniformRand::rand(rng)).collect();
     let u_alpha: G::ScalarField = UniformRand::rand(rng);
     let u_ralpha: G::ScalarField = UniformRand::rand(rng);
-    consistency_blind_trans(g, hs, d, u_rs, u_alpha, u_ralpha)
+    consistency_blind_trans(g, hs, d, binomials, u_rs, u_alpha, u_ralpha)
 }
 
 /// Generalises "core" proof to a "generic" one. To be used before blinding.
@@ -505,6 +511,9 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
         .map(|_i| <P::G1 as UniformRand>::rand(&mut rng))
         .collect();
 
+    let binomials: Vec<Vec<P::ScalarField>> = (0..d+1).map(|i|
+        (0..i+1).map(|j| binomial(i,j) ).collect() ).collect();
+
     // "Base" language is consistent but only if we blind some randomness in s
     {
         let lang = consistency_lang(g, &hs, d);
@@ -512,7 +521,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
         let lang_valid = lang.contains(&inst, &wit);
         println!("Language valid? {lang_valid:?}");
 
-        let trans: CH20Trans<P::G1> = consistency_trans_rand(g, &hs, d, &mut rng);
+        let trans: CH20Trans<P::G1> = consistency_trans_rand(g, &hs, d, &binomials, &mut rng);
         let mut s: Vec<P::ScalarField> = (0..(lang.wit_size()))
             .map(|_i| <P::ScalarField as UniformRand>::rand(&mut rng))
             .collect();
@@ -543,7 +552,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
 
     // Update it with some x values (but not α)
 
-    let trans_core: CH20Trans<P::G1> = consistency_core_trans_rand(g, &hs, d, &mut rng);
+    let trans_core: CH20Trans<P::G1> = consistency_core_trans_rand(g, &hs, d, &binomials, &mut rng);
     let blinding_compatible = trans_core.is_blinding_compatible(&lang_core, &inst_core);
     println!("Transformaion (core) blinding compatible? {blinding_compatible:?}");
     assert!(blinding_compatible);
@@ -570,7 +579,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     println!("Transformed generalised proof valid?: {:?}", res_gen);
     assert!(res_gen.is_ok());
 
-    let trans_blind: CH20Trans<P::G1> = consistency_blind_trans_rand(g, &hs, d, &mut rng);
+    let trans_blind: CH20Trans<P::G1> = consistency_blind_trans_rand(g, &hs, d, &binomials, &mut rng);
     let proof_blinded = proof_gen.update(&mut rng, &crs, &lang_gen, &inst_gen, &trans_blind);
 
     let inst_blinded = trans_blind.update_instance(&lang_gen, &inst_gen);

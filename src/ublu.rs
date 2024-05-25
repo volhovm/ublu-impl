@@ -29,6 +29,7 @@ pub struct Ublu<P: Pairing, RNG: RngCore> {
     pub pedersen: PedersenParams<P::G1>,
     pub ch20crs: CH20CRS<P>,
     stirling: Vec<P::ScalarField>,
+    binomials: Vec<Vec<P::ScalarField>>,
     escrow_lang: AlgLang<P::G1>,
     // consistency_lang: AlgLang<P::G1>,
     trace_lang: AlgLang<P::G1>,
@@ -102,6 +103,10 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         let stirling: Vec<P::ScalarField> = (0..d + 1)
             .map(|k| crate::utils::stirling_first_kind_dp::<P::G1>(d, k))
             .collect();
+
+        let binomials: Vec<Vec<P::ScalarField>> = (0..d+1).map(|i|
+            (0..i+1).map(|j| binomial(i,j) ).collect() ).collect();
+
         Ublu {
             lambda,
             d,
@@ -113,6 +118,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             com_h,
             rng,
             stirling,
+            binomials,
             escrow_lang: escrow_lang(g, com_h),
             trace_lang: trace_lang(g, com_h),
             pk_lang: key_lang(g, com_h),
@@ -317,6 +323,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
                 self.g,
                 &hs,
                 self.d,
+                &self.binomials,
                 From::from(x as u64),
                 *r_x,
                 r_i_list.clone(),
@@ -346,7 +353,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
         let v_coeff =
-            |i: usize, j: usize| field_pow(x, i - j) * binomial::<P::ScalarField>(i, j);
+            |i: usize, j: usize| field_pow(x, i - j) * self.binomials[i][j];
         let mut new_ciphers: Vec<Cipher<P::G1>> = vec![];
 
         for i in 0..old_ciphers.len() {
@@ -444,7 +451,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             let proof_gen = consistency::generalise_proof(self.d, randomized_hint.proof_c.clone());
 
             let trans_blind: CH20Trans<P::G1> =
-                consistency::consistency_blind_trans(self.g, &hs, self.d, r_i_list, alpha, r_alpha);
+                consistency::consistency_blind_trans(self.g, &hs, self.d, &self.binomials, r_i_list, alpha, r_alpha);
 
             proof_gen.update(
                 &mut self.rng,

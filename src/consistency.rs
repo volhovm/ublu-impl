@@ -9,8 +9,9 @@ use rand::{thread_rng, RngCore};
 
 use crate::{
     ch20::{AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, LinearPoly, CH20CRS},
-    utils::{binomial, field_pow},
+    utils::{field_pow},
 };
+use crate::utils::all_binomials;
 
 /// Instance: Tcal,Xcal,Acal,[(Ai,Di)] for 1..d, 1,1,[1..1] for 1..d-1
 /// Witness: t,r_t,x,r_x,alpha,r_alpha,x-t,alpha*(x-t),r_alpha*(x-t),[r_i] for 1..d,[r_i*(x-t)] for 1..d-1
@@ -511,8 +512,7 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
         .map(|_i| <P::G1 as UniformRand>::rand(&mut rng))
         .collect();
 
-    let binomials: Vec<Vec<P::ScalarField>> = (0..d+1).map(|i|
-        (0..i+1).map(|j| binomial(i,j) ).collect() ).collect();
+    let binomials: Vec<Vec<P::ScalarField>> = all_binomials(d);
 
     // "Base" language is consistent but only if we blind some randomness in s
     {

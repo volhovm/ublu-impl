@@ -1,17 +1,21 @@
 use ark_ec::Group;
 use ark_ff::{One, PrimeField, Zero};
 
-// Returns (n choose k) -- choosing k elements from n.
-pub fn binomial<F: PrimeField>(n: usize, k: usize) -> F {
-    binomial_f(F::from(n as u64), F::from(k as u64))
-}
 
-pub fn binomial_f<F: PrimeField>(n: F, k: F) -> F {
-    if k.is_zero() {
-        F::one()
-    } else {
-        (n * binomial_f::<F>(n - F::one(), k - F::one())) / k
+pub fn all_binomials<F: PrimeField>(d: usize) -> Vec<Vec<F>> {
+    let mut binom:Vec<Vec<F>> = (0..d+1).map(|i|
+        (0..i+1).map(|j| F::zero() ).collect() ).collect();
+
+    for n in 0..=d {
+        for k in 0..=n {
+            if k == 0 || k == n {
+                binom[n][k] = F::one();
+            } else {
+                binom[n][k] = binom[n - 1][k - 1] + binom[n - 1][k];
+            }
+        }
     }
+    binom
 }
 
 
@@ -186,17 +190,18 @@ pub(crate) mod tests {
 
     #[test]
     fn test_binomial() {
-        assert_eq!(binomial::<CF>(1, 1), CF::from(1u64));
-        assert_eq!(binomial::<CF>(2, 1), CF::from(2u64));
-        assert_eq!(binomial::<CF>(3, 1), CF::from(3u64));
-        assert_eq!(binomial::<CF>(3, 2), CF::from(3u64));
-        assert_eq!(binomial::<CF>(3, 3), CF::from(1u64));
-        assert_eq!(binomial::<CF>(9, 2), CF::from(36u64));
-        assert_eq!(binomial::<CF>(4, 3), CF::from(4u64));
-        assert_eq!(binomial::<CF>(5, 4), CF::from(5u64));
-        assert_eq!(binomial::<CF>(12, 5),CF::from(792u64));
+        let allbin = all_binomials::<CF>(128);
+        assert_eq!(allbin[1][1], CF::from(1u64));
+        assert_eq!(allbin[2][1], CF::from(2u64));
+        assert_eq!(allbin[3][1], CF::from(3u64));
+        assert_eq!(allbin[3][2], CF::from(3u64));
+        assert_eq!(allbin[3][3], CF::from(1u64));
+        assert_eq!(allbin[9][2], CF::from(36u64));
+        assert_eq!(allbin[4][3], CF::from(4u64));
+        assert_eq!(allbin[5][4], CF::from(5u64));
+        assert_eq!(allbin[12][5],CF::from(792u64));
         let res = BigInt([13075353597415539270, 1298394228608800905, 0, 0]);
-        assert_eq!(binomial_f(CF::from(128),CF::from(64) ), res.into() );
+        assert_eq!(allbin[128][64], res.into() );
         println!("Binomial test passed")
     }
 

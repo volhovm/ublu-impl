@@ -14,8 +14,9 @@ use crate::{
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
     languages::{escrow_lang, key_lang, trace_lang},
     sigma::SigmaProof,
-    utils::{binomial, field_pow},
+    utils::{field_pow},
 };
+use crate::utils::all_binomials;
 
 #[allow(dead_code)]
 pub struct Ublu<P: Pairing, RNG: RngCore> {
@@ -104,8 +105,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
             .map(|k| crate::utils::stirling_first_kind_dp::<P::G1>(d, k))
             .collect();
 
-        let binomials: Vec<Vec<P::ScalarField>> = (0..d+1).map(|i|
-            (0..i+1).map(|j| binomial(i,j) ).collect() ).collect();
+        let binomials: Vec<Vec<P::ScalarField>> = all_binomials(d);
 
         Ublu {
             lambda,

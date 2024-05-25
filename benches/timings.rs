@@ -19,11 +19,11 @@ use ublu_impl::commitment::Comm;
 use ublu_impl::elgamal::Cipher;
 use ublu_impl::ublu::{Tag, Ublu};
 use ublu_impl::{CC, CF, CG1};
-use ublu_impl::utils::binomial;
+use ublu_impl::utils::{all_binomials};
 
 mod perf;
 
-static D_VALUES: [usize; 7] = [2, 4, 8, 16, 32, 64, 128];
+static D_VALUES: [usize; 1] = [64]; // [70, 75, 80, 85, 90, 100, 110]; //[2, 4, 8, 16, 32, 64, 128];
 static T: u32 = 4;
 
 fn bench_setup(c: &mut Criterion) {
@@ -383,13 +383,17 @@ fn bench_matrixmsm(c: &mut Criterion) {
 
 fn bench_binom(c: &mut Criterion) {
     let mut group = c.benchmark_group("Binomial");
-    let d = 1;
+    let d = 64;
     group.bench_with_input(BenchmarkId::from_parameter(&d), &d, |b, _d| {
         b.iter_batched(
             || {
-                (128,64)
+                (128,0)
             },
-            |(n,k)| binomial::<CF>(n,k),
+            |(n,k)| {
+
+                all_binomials::<CF>(d);
+            },
+
             BatchSize::SmallInput,
         )
     });
@@ -438,16 +442,16 @@ fn bench_matrixpar(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
-    targets = bench_vfhist,
-    bench_setup,
-    bench_keygen,
+    targets = //bench_vfhist,
+    //bench_setup,
+    /*bench_keygen,
     bench_keyver,
     bench_update,
     bench_vfhint,
     bench_escrow,
     bench_escrow_ver,
-    bench_decrypt,
-    //bench_binom
+    bench_decrypt,*/
+    bench_binom
     //bench_matrixmul,
     //bench_matrixpar
 }

@@ -75,7 +75,7 @@ impl<G: Group> AlgLang<G> {
         }*/
         let res_mat: Vec<Vec<G>> = self
             .matrix
-            .par_iter()
+            .iter() // par_iter
             .map(|row| row.iter().map(|elem| elem.eval_lpoly(inst)).collect())
             .collect();
         //assert_eq!(res_mat, mat2);
@@ -120,7 +120,7 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
         }
     }*/
     let res: Vec<G> = mat
-        .par_iter()
+        .iter() // par_iter
         .map(|row| {
             let el: G = row.iter().zip(vec).map(|(m, v)| *m * v).sum();
             el
@@ -147,7 +147,7 @@ pub fn mul_mat_by_vec_f_g<G: Group>(mat: &[Vec<G::ScalarField>], vec: &[G]) -> V
         }
     }*/
     let res: Vec<G> = mat
-        .par_iter()
+        .iter() // par_iter
         .map(|row| {
             let el: G = row.iter().zip(vec).map(|(m, v)| *v * m).sum();
             el
@@ -169,7 +169,7 @@ pub fn mul_mat_by_vec_f_f<G: Group>(
         }
     }*/
     let res: Vec<G::ScalarField> = mat
-        .par_iter()
+        .iter() // par_iter
         .map(|row| {
             let el: G::ScalarField = row.iter().zip(vec).map(|(m, v)| *m * v).sum();
             el

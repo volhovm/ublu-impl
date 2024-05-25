@@ -19,10 +19,11 @@ use ublu_impl::commitment::Comm;
 use ublu_impl::elgamal::Cipher;
 use ublu_impl::ublu::{Tag, Ublu};
 use ublu_impl::{CC, CF, CG1};
+use ublu_impl::utils::binomial;
 
 mod perf;
 
-static D_VALUES: [usize; 1] = [128]; // [2, 4, 8, 16, 32, 64];
+static D_VALUES: [usize; 7] = [2, 4, 8, 16, 32, 64, 128];
 static T: u32 = 4;
 
 fn bench_setup(c: &mut Criterion) {
@@ -380,6 +381,22 @@ fn bench_matrixmsm(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_binom(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Binomial");
+    let d = 1;
+    group.bench_with_input(BenchmarkId::from_parameter(&d), &d, |b, _d| {
+        b.iter_batched(
+            || {
+                (128,64)
+            },
+            |(n,k)| binomial::<CF>(n,k),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.finish();
+}
+
 fn bench_matrixpar(c: &mut Criterion) {
     let mut group = c.benchmark_group("Matrixpar");
     let d = 1;
@@ -430,6 +447,7 @@ criterion_group! {
     bench_escrow,
     bench_escrow_ver,
     bench_decrypt,
+    //bench_binom
     //bench_matrixmul,
     //bench_matrixpar
 }

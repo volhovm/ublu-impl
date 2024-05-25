@@ -264,7 +264,7 @@ pub fn consistency_trans<G: Group>(
     t_wa[8] = u_x * u_ralpha; // + U_x*U_α
 
     let v_coeff = |i: usize, j: usize, x: G::ScalarField| {
-        field_pow(x, i - j) * G::ScalarField::from(binomial(i, j) as u64)
+        field_pow(x, i - j) * binomial::<G::ScalarField>(i, j)
     };
 
     // r_i' = ∑ v_coeff(i,j,U_x) r_i + U_{r_i}
@@ -302,7 +302,7 @@ pub fn consistency_trans<G: Group>(
         }
         for j in 0..i {
             t_am[4 + 2 * i][n + 4 + 2 * j] =
-                field_pow(u_x, i - j) * G::ScalarField::from(binomial(i, j + 1) as u64)
+                field_pow(u_x, i - j) * binomial::<G::ScalarField>(i, j + 1)
         }
         t_aa[3 + 2 * i] = g * u_rs[i];
         t_aa[4 + 2 * i] = g * (field_pow(u_x, i + 1)) + hs[1] * u_rs[i] + hs[2 + i] * u_alpha;

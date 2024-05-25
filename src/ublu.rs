@@ -346,7 +346,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
         let v_coeff =
-            |i: usize, j: usize| field_pow(x, i - j) * P::ScalarField::from(binomial(i, j) as u64);
+            |i: usize, j: usize| field_pow(x, i - j) * binomial::<P::ScalarField>(i, j);
         let mut new_ciphers: Vec<Cipher<P::G1>> = vec![];
 
         for i in 0..old_ciphers.len() {

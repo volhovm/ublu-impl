@@ -2,13 +2,18 @@ use ark_ec::Group;
 use ark_ff::{One, PrimeField, Zero};
 
 // Returns (n choose k) -- choosing k elements from n.
-pub fn binomial(n: usize, k: usize) -> usize {
-    if k == 0 {
-        1
+pub fn binomial<F: PrimeField>(n: usize, k: usize) -> F {
+    binomial_f(F::from(n as u64), F::from(k as u64))
+}
+
+pub fn binomial_f<F: PrimeField>(n: F, k: F) -> F {
+    if k.is_zero() {
+        F::one()
     } else {
-        (n * binomial(n - 1, k - 1)) / k
+        (n * binomial_f::<F>(n - F::one(), k - F::one())) / k
     }
 }
+
 
 pub fn field_pow<F: PrimeField>(base: F, exp: usize) -> F {
     let mut res: F = F::one();
@@ -99,6 +104,7 @@ pub fn stirling_first_kind_rec(n: usize, k: usize) -> i64 {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use ark_ff::BigInt;
     use super::*;
     use crate::{CF, CG1};
     use ark_std::UniformRand;
@@ -180,15 +186,17 @@ pub(crate) mod tests {
 
     #[test]
     fn test_binomial() {
-        assert!(binomial(1, 1) == 1);
-        assert!(binomial(2, 1) == 2);
-        assert!(binomial(3, 1) == 3);
-        assert!(binomial(3, 2) == 3);
-        assert!(binomial(3, 3) == 1);
-        assert!(binomial(9, 2) == 36);
-        assert!(binomial(4, 3) == 4);
-        assert!(binomial(5, 4) == 5);
-        assert!(binomial(12, 5) == 792);
+        assert_eq!(binomial::<CF>(1, 1), CF::from(1u64));
+        assert_eq!(binomial::<CF>(2, 1), CF::from(2u64));
+        assert_eq!(binomial::<CF>(3, 1), CF::from(3u64));
+        assert_eq!(binomial::<CF>(3, 2), CF::from(3u64));
+        assert_eq!(binomial::<CF>(3, 3), CF::from(1u64));
+        assert_eq!(binomial::<CF>(9, 2), CF::from(36u64));
+        assert_eq!(binomial::<CF>(4, 3), CF::from(4u64));
+        assert_eq!(binomial::<CF>(5, 4), CF::from(5u64));
+        assert_eq!(binomial::<CF>(12, 5),CF::from(792u64));
+        let res = BigInt([13075353597415539270, 1298394228608800905, 0, 0]);
+        assert_eq!(binomial_f(CF::from(128),CF::from(64) ), res.into() );
         println!("Binomial test passed")
     }
 

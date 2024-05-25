@@ -1,6 +1,7 @@
 from glob import glob
 import json
 from collections import defaultdict
+import numpy as np
 
 a = defaultdict(dict)
 
@@ -23,9 +24,19 @@ colors = {"Escrow": "red",
           "Update": "yellow",
           "VfEscrow": "magenta",
           "VfHint": "dashed",
-          "VfHistory": "dotted",
+          #"VfHistory": "dotted",
           "VfKeyGen": "black",
-          "Decrypt": "black"}
+          #"Decrypt": "black"
+          }
+
+xs = [x for x in sorted(a["VfHistory"].keys())]
+xsm = [x-1 for x in sorted(a["VfHistory"].keys())]
+#print(xs)
+ys = [a["VfHistory"][x][0]/1e6 for x in xs]
+#print(ys)
+m,b = np.polyfit(xsm, ys, 1)
+
+print("% VfHistory m", m, "b", b, " with total time: (d-1)*m, b negl")
 
 for fn in sorted(a.keys(), key=lambda x: a[x][128][0], reverse=True):
     mark="+" #only marks,mark="+mark+",
@@ -33,8 +44,12 @@ for fn in sorted(a.keys(), key=lambda x: a[x][128][0], reverse=True):
         #print("missing", fn)
         continue
     print("\\addplot[", colors[fn],",error bars/.cd,y dir=both ,y explicit] coordinates {")
+    last = 1
+    lastd = 1
     for deg in sorted(a[fn].keys()):
         el = a[fn][deg]
-        print(f"({deg},{el[0]/1000000}) +- (0,{el[1]/1000000})")
+        print(f"({deg},{el[0]/1000000}) +- (0,{el[1]/1000000})  %{el[0]/1e6/last} ,  {el[0]/1e6/last / lastd}")
+        lastd = el[0]/1e6/last
+        last = el[0]/1e6
     print("};")
     print("\\addlegendentry{"+fn+"};")

@@ -122,8 +122,12 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
     let res: Vec<G> = mat
         .iter() // par_iter
         .map(|row| {
-            let el: G = row.iter().zip(vec).map(|(m, v)| *m * v).sum();
-            el
+            row.iter().zip(vec).filter_map(|(m, v)| {
+                match m.is_zero() {
+                    false => Some(*m * v),
+                    true  => None
+                }
+            }).sum()
         })
         .collect();
     //assert_eq!(res, res2);

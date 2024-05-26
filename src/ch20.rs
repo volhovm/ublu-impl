@@ -18,7 +18,8 @@ impl<G: Group> LinearPoly<G> {
             + vars
                 .iter()
                 .zip(self.poly_coeffs.iter())
-                .filter_map(|(val, flag)| flag.then(|| val)).sum::<G>()
+                .filter_map(|(val, flag)| flag.then(|| val))
+                .sum::<G>()
     }
 
     pub fn constant(size: usize, elem: G) -> Self {
@@ -122,12 +123,13 @@ pub fn mul_mat_by_vec_g_f<G: Group>(mat: &[Vec<G>], vec: &[G::ScalarField]) -> V
     let res: Vec<G> = mat
         .iter() // par_iter
         .map(|row| {
-            row.iter().zip(vec).filter_map(|(m, v)| {
-                match m.is_zero() {
+            row.iter()
+                .zip(vec)
+                .filter_map(|(m, v)| match m.is_zero() {
                     false => Some(*m * v),
-                    true  => None
-                }
-            }).sum()
+                    true => None,
+                })
+                .sum()
         })
         .collect();
     //assert_eq!(res, res2);

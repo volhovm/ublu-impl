@@ -1,10 +1,10 @@
 use ark_ec::Group;
 use ark_ff::{One, PrimeField, Zero};
 
-
 pub fn all_binomials<F: PrimeField>(d: usize) -> Vec<Vec<F>> {
-    let mut binom:Vec<Vec<F>> = (0..d+1).map(|i|
-        (0..i+1).map(|j| F::zero() ).collect() ).collect();
+    let mut binom: Vec<Vec<F>> = (0..d + 1)
+        .map(|i| (0..i + 1).map(|j| F::zero()).collect())
+        .collect();
 
     for n in 0..=d {
         for k in 0..=n {
@@ -17,7 +17,6 @@ pub fn all_binomials<F: PrimeField>(d: usize) -> Vec<Vec<F>> {
     }
     binom
 }
-
 
 pub fn field_pow<F: PrimeField>(base: F, exp: usize) -> F {
     let mut res: F = F::one();
@@ -108,9 +107,9 @@ pub fn stirling_first_kind_rec(n: usize, k: usize) -> i64 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use ark_ff::BigInt;
     use super::*;
     use crate::{CF, CG1};
+    use ark_ff::BigInt;
     use ark_std::UniformRand;
     use rand::thread_rng;
 
@@ -199,9 +198,9 @@ pub(crate) mod tests {
         assert_eq!(allbin[9][2], CF::from(36u64));
         assert_eq!(allbin[4][3], CF::from(4u64));
         assert_eq!(allbin[5][4], CF::from(5u64));
-        assert_eq!(allbin[12][5],CF::from(792u64));
+        assert_eq!(allbin[12][5], CF::from(792u64));
         let res = BigInt([13075353597415539270, 1298394228608800905, 0, 0]);
-        assert_eq!(allbin[128][64], res.into() );
+        assert_eq!(allbin[128][64], res.into());
         println!("Binomial test passed")
     }
 

@@ -7,6 +7,7 @@ use ark_ff::UniformRand;
 use ark_std::Zero;
 use rand::RngCore;
 
+use crate::utils::all_binomials;
 use crate::{
     ch20::{AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, CH20CRS},
     commitment::{Comm, PedersenParams},
@@ -14,9 +15,8 @@ use crate::{
     elgamal::{Cipher, ElgamalParams, ElgamalSk},
     languages::{escrow_lang, key_lang, trace_lang},
     sigma::SigmaProof,
-    utils::{field_pow},
+    utils::field_pow,
 };
-use crate::utils::all_binomials;
 
 #[allow(dead_code)]
 pub struct Ublu<P: Pairing, RNG: RngCore> {
@@ -352,8 +352,7 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
         x: P::ScalarField,
         pk_h: P::G1,
     ) -> Vec<Cipher<P::G1>> {
-        let v_coeff =
-            |i: usize, j: usize| field_pow(x, i - j) * self.binomials[i][j];
+        let v_coeff = |i: usize, j: usize| field_pow(x, i - j) * self.binomials[i][j];
         let mut new_ciphers: Vec<Cipher<P::G1>> = vec![];
 
         for i in 0..old_ciphers.len() {
@@ -450,8 +449,15 @@ impl<P: Pairing, RNG: RngCore> Ublu<P, RNG> {
 
             let proof_gen = consistency::generalise_proof(self.d, randomized_hint.proof_c.clone());
 
-            let trans_blind: CH20Trans<P::G1> =
-                consistency::consistency_blind_trans(self.g, &hs, self.d, &self.binomials, r_i_list, alpha, r_alpha);
+            let trans_blind: CH20Trans<P::G1> = consistency::consistency_blind_trans(
+                self.g,
+                &hs,
+                self.d,
+                &self.binomials,
+                r_i_list,
+                alpha,
+                r_alpha,
+            );
 
             proof_gen.update(
                 &mut self.rng,

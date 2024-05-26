@@ -7,11 +7,11 @@ use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::{thread_rng, RngCore};
 
+use crate::utils::all_binomials;
 use crate::{
     ch20::{AlgInst, AlgLang, AlgWit, CH20Proof, CH20Trans, LinearPoly, CH20CRS},
-    utils::{field_pow},
+    utils::field_pow,
 };
-use crate::utils::all_binomials;
 
 /// Instance: Tcal,Xcal,Acal,[(Ai,Di)] for 1..d, 1,1,[1..1] for 1..d-1
 /// Witness: t,r_t,x,r_x,alpha,r_alpha,x-t,alpha*(x-t),r_alpha*(x-t),[r_i] for 1..d,[r_i*(x-t)] for 1..d-1
@@ -265,9 +265,7 @@ pub fn consistency_trans<G: Group>(
     t_wm[8][6] = u_ralpha; //         + (x-t)*U_rα
     t_wa[8] = u_x * u_ralpha; // + U_x*U_α
 
-    let v_coeff = |i: usize, j: usize, x: G::ScalarField| {
-        field_pow(x, i - j) * binomials[i][j]
-    };
+    let v_coeff = |i: usize, j: usize, x: G::ScalarField| field_pow(x, i - j) * binomials[i][j];
 
     // r_i' = ∑ v_coeff(i,j,U_x) r_i + U_{r_i}
     for i in 0..d {
@@ -303,8 +301,7 @@ pub fn consistency_trans<G: Group>(
             t_am[4 + 2 * i][4 + 2 * j] = v_coeff(i, j, u_x);
         }
         for j in 0..i {
-            t_am[4 + 2 * i][n + 4 + 2 * j] =
-                field_pow(u_x, i - j) * binomials[i][j + 1]
+            t_am[4 + 2 * i][n + 4 + 2 * j] = field_pow(u_x, i - j) * binomials[i][j + 1]
         }
         t_aa[3 + 2 * i] = g * u_rs[i];
         t_aa[4 + 2 * i] = g * (field_pow(u_x, i + 1)) + hs[1] * u_rs[i] + hs[2 + i] * u_alpha;
@@ -579,7 +576,8 @@ pub fn check_ublu_lang_consistency<P: Pairing>() {
     println!("Transformed generalised proof valid?: {:?}", res_gen);
     assert!(res_gen.is_ok());
 
-    let trans_blind: CH20Trans<P::G1> = consistency_blind_trans_rand(g, &hs, d, &binomials, &mut rng);
+    let trans_blind: CH20Trans<P::G1> =
+        consistency_blind_trans_rand(g, &hs, d, &binomials, &mut rng);
     let proof_blinded = proof_gen.update(&mut rng, &crs, &lang_gen, &inst_gen, &trans_blind);
 
     let inst_blinded = trans_blind.update_instance(&lang_gen, &inst_gen);
